@@ -1,0 +1,527 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>SAR Probability Mapper</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: field-kit console. Inputs rail on the left, the map is the hero, results read like an ICS worksheet below it. */
+:root{
+  --bg:#EDF0EB; --panel:#FAFBF8; --ink:#1B241E; --muted:#5C6A60; --line:#CED6CC;
+  --accent:#D9531E; --accent-ink:#FFFFFF; --accent-soft:#F8E1D5;
+  --ok:#2F7A4A; --warn:#B7791F; --crit:#B4232A;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111613; --panel:#19201B; --ink:#E4EAE3; --muted:#9AA79D; --line:#2D3830;
+  --accent:#F06A33; --accent-ink:#140B06; --accent-soft:#3A2116;
+  --ok:#5DBB7E; --warn:#E0A84A; --crit:#F0656B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111613; --panel:#19201B; --ink:#E4EAE3; --muted:#9AA79D; --line:#2D3830;
+  --accent:#F06A33; --accent-ink:#140B06; --accent-soft:#3A2116;
+  --ok:#5DBB7E; --warn:#E0A84A; --crit:#F0656B; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px}
+h1,h2,h3{font-family:var(--display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
+header.top h1{font-size:30px;text-transform:uppercase}
+header.top h1 span{color:var(--accent)}
+header.top p{margin:0;color:var(--muted);max-width:70ch}
+.app{display:grid;grid-template-columns:330px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.app{grid-template-columns:minmax(0,1fr)}}
+.rail{display:flex;flex-direction:column;gap:12px}
+fieldset{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:12px 14px 14px;margin:0;min-width:0;display:flex;flex-direction:column;gap:10px}
+legend{font-family:var(--display);font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.08em;padding:0 6px;color:var(--accent)}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+input[type=text],input[type=number],select{font:inherit;font-size:14px;text-transform:none;letter-spacing:0;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 8px;width:100%}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.checks{display:flex;flex-direction:column;gap:6px}
+.checks label,.inline{flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--ink);font-weight:400}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{flex:1;border:0;border-right:1px solid var(--line);background:var(--bg);color:var(--ink);font:500 13px var(--body);padding:7px 6px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tools button,.btn{border:1px solid var(--line);background:var(--bg);color:var(--ink);font:500 13px var(--body);padding:7px 6px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.tools button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:hover,.tools button:hover{border-color:var(--muted)}
+.sw{width:12px;height:12px;border-radius:2px;display:inline-block;flex:none}
+details summary{cursor:pointer;font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-size:15px}
+.main{display:flex;flex-direction:column;gap:14px;min-width:0}
+.mapwrap{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.mapbar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+.layers{display:flex;flex-wrap:wrap;gap:6px 14px}
+.layers label{flex-direction:row;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)}
+.canvasbox{position:relative;width:100%;max-width:820px;aspect-ratio:1;margin:0 auto;max-height:82vh}
+canvas#map{width:100%;height:100%;display:block;border-radius:4px;touch-action:none;cursor:crosshair}
+.toolhint{font-size:12.5px;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card h2{font-size:18px;text-transform:uppercase;letter-spacing:.06em}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.urg{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.urg i{width:12px;height:12px;border-radius:50%;display:inline-block}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);padding:4px 6px}
+td{padding:5px 6px;border-bottom:1px solid var(--line)}
+td.num{font-family:var(--mono);text-align:right}
+th.num{text-align:right}
+.bar{height:6px;background:var(--accent);border-radius:3px;min-width:2px}
+ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;max-width:70ch}
+.warnline{font-size:12.5px;color:var(--warn)}
+.foot{font-size:12px;color:var(--muted);max-width:90ch;margin-top:6px}
+.qgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="top">
+  <h1>SAR <span>Probability</span> Mapper</h1>
+  <p>Prototype. A sample incident is loaded on generated terrain. Change the subject, place the last known point, or load your own topo or aerial map.</p>
+</header>
+
+<div class="app">
+  <div class="rail">
+    <fieldset>
+      <legend>Subject</legend>
+      <div class="row">
+        <label for="name">Name / ID<input id="name" type="text" value="Sample subject"></label>
+        <label for="age">Age<input id="age" type="number" min="0" max="110" value="78"></label>
+      </div>
+      <label for="cat">Lost person category<select id="cat"></select></label>
+      <div>
+        <p class="hint" style="margin-bottom:6px">Medical history</p>
+        <div class="checks" id="medList"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Incident</legend>
+      <label for="lkpNote">LKP description or coordinates<input id="lkpNote" type="text" value="Residence, last seen on porch"></label>
+      <div class="row">
+        <label for="hours">Hours since LKP<input id="hours" type="number" min="0" step="0.5" value="4"></label>
+        <label for="weather">Weather<select id="weather">
+          <option value="mild">Mild</option><option value="hot">Hot</option><option value="cold">Cold</option>
+          <option value="wetcold" selected>Wet and cold</option><option value="storm">Storm</option></select></label>
+      </div>
+      <label class="inline" for="night"><input id="night" type="checkbox" checked> Darkness has fallen since LKP</label>
+      <label class="inline" for="useHead"><input id="useHead" type="checkbox"> Known direction of travel</label>
+      <div class="row">
+        <label for="heading">Bearing (°)<input id="heading" type="number" min="0" max="359" value="90"></label>
+        <label for="headConf">Confidence<select id="headConf"><option value="0.7">Low</option><option value="1.6" selected>Medium</option><option value="3">High</option></select></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Map</legend>
+      <div class="seg" role="group" aria-label="Map source">
+        <button id="modeSample" aria-pressed="true">Sample terrain</button>
+        <button id="modeImage" aria-pressed="false">My map image</button>
+      </div>
+      <div id="imgControls" hidden>
+        <label for="imgFile">Topo or aerial screenshot<input id="imgFile" type="file" accept="image/*"></label>
+        <label for="imgW" style="margin-top:8px">Map width (miles, left edge to right edge)<input id="imgW" type="number" min="0.1" step="0.1" value="3"></label>
+        <p class="hint" style="margin-top:6px">Screenshots from CalTopo, Google Earth or USGS work. North must be up. Trace the roads, trails, streams, water and buildings so the model can use them.</p>
+      </div>
+      <p class="hint">Tap the map with a tool selected.</p>
+      <div class="tools" id="tools">
+        <button data-tool="lkp" aria-pressed="true"><span class="sw" style="background:#D9531E;border-radius:50%"></span>LKP</button>
+        <button data-tool="road" aria-pressed="false"><span class="sw" style="background:#C23B22"></span>Road</button>
+        <button data-tool="trail" aria-pressed="false"><span class="sw" style="background:#5B3A1E"></span>Trail</button>
+        <button data-tool="stream" aria-pressed="false"><span class="sw" style="background:#2F7FC1"></span>Stream</button>
+        <button data-tool="water" aria-pressed="false"><span class="sw" style="background:#8FC3E6"></span>Water</button>
+        <button data-tool="building" aria-pressed="false"><span class="sw" style="background:#222"></span>Building</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="undo">Undo drawing</button>
+        <button class="btn" id="clearDraw">Clear drawings</button>
+      </div>
+      <button class="btn" id="recenter">Center map on LKP</button>
+    </fieldset>
+
+    <details class="card" style="gap:8px">
+      <summary>Distance statistics</summary>
+      <p class="hint">Straight-line distance from the LKP where subjects of this category are found, in miles. Values are approximations modeled on published lost person behavior data (ISRID). Check them against your Lost Person Behavior reference and adjust for your terrain.</p>
+      <div class="qgrid">
+        <label for="q25">25%<input id="q25" type="number" step="0.1" min="0.05"></label>
+        <label for="q50">50%<input id="q50" type="number" step="0.1" min="0.05"></label>
+        <label for="q75">75%<input id="q75" type="number" step="0.1" min="0.05"></label>
+        <label for="q95">95%<input id="q95" type="number" step="0.1" min="0.05"></label>
+      </div>
+      <button class="btn" id="resetQ">Reset to category values</button>
+    </details>
+  </div>
+
+  <div class="main">
+    <div class="mapwrap">
+      <div class="mapbar">
+        <div class="layers">
+          <label for="lHeat"><input id="lHeat" type="checkbox" checked>Probability</label>
+          <label for="lRings"><input id="lRings" type="checkbox" checked>Distance rings</label>
+          <label for="lSeg"><input id="lSeg" type="checkbox" checked>Segments</label>
+          <label for="lCont"><input id="lCont" type="checkbox" checked>Contours</label>
+        </div>
+        <span class="toolhint" id="toolHint">Tool: place last known point</span>
+      </div>
+      <div class="canvasbox"><canvas id="map" aria-label="Probability map"></canvas></div>
+      <div class="legend">
+        <span><i class="sw" style="background:#B3122E"></i>Top 25% of probability</span>
+        <span><i class="sw" style="background:#E8501C"></i>25–50%</span>
+        <span><i class="sw" style="background:#F49B2B"></i>50–75%</span>
+        <span><i class="sw" style="background:#F8D45C"></i>75–95%</span>
+        <span><i class="sw" style="border:1.5px dashed #1B241E;background:transparent"></i>Distance rings</span>
+      </div>
+      <p class="warnline" id="massWarn" hidden></p>
+    </div>
+
+    <div class="results">
+      <section class="card">
+        <h2>Incident summary</h2>
+        <div class="urg" id="urg"><i></i><span></span></div>
+        <dl class="kv" id="summary"></dl>
+        <button class="btn primary" id="copy">Copy summary</button>
+        <span class="hint" id="copyMsg" aria-live="polite"></span>
+      </section>
+      <section class="card">
+        <h2>Segment priority</h2>
+        <p class="hint">Probability of area (POA) for each map segment. Assign highest probability density first.</p>
+        <div style="overflow-x:auto"><table><thead><tr><th>Seg</th><th class="num">POA</th><th class="num">mi²</th><th class="num">POA/mi²</th><th style="width:30%"></th></tr></thead><tbody id="segBody"></tbody></table></div>
+      </section>
+      <section class="card">
+        <h2>Behavior and search notes</h2>
+        <ul class="notes" id="notes"></ul>
+      </section>
+    </div>
+    <p class="foot">How it works: probability starts from the category's distance statistics, then each cell is weighted by distance to roads, trails, drainages, water and buildings, by slope and elevation change, by direction of travel, and by medical, weather and time factors. This is a planning aid for experienced search managers, not a replacement for a full search plan or consensus (Mattson) weighting.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const CATS=[
+ {id:'child1_3',label:'Child, 1–3',ages:[0,3],q:[0.1,0.2,0.5,1.2],w:{trail:.4,road:.3,stream:.6,water:1.6,waterIn:.5,structure:1.4,down:.4,up:0,slope:1.6},notes:['Little sense of direction. Travel is short and random.','Often found sheltered or asleep in brush, vehicles, sheds or crawl spaces. Clear structures and dense cover near the LKP first.','Water near the LKP is the top hazard. Check ponds, pools and streams early.','May not answer calls and may hide from searchers.']},
+ {id:'child4_6',label:'Child, 4–6',ages:[4,6],q:[0.1,0.3,0.7,1.8],w:{trail:.8,road:.6,stream:.5,water:1.2,waterIn:.35,structure:1.4,down:.3,up:0,slope:1.3},notes:['Follows trails and other easy routes for short distances, then shelters.','Drawn to animals, play areas and interesting features.','Often hides when scared. Have a family member call if possible.','Check water near the LKP early.']},
+ {id:'child7_9',label:'Child, 7–9',ages:[7,9],q:[0.2,0.5,1.0,2.6],w:{trail:1.4,road:1.0,stream:.6,water:.8,waterIn:.2,structure:1.2,down:.3,up:.1,slope:1},notes:['Uses trails and roads, tries shortcuts and gets turned around.','Often trying to return home or to a familiar place.','May hide for fear of getting in trouble.']},
+ {id:'child10_12',label:'Child, 10–12',ages:[10,12],q:[0.3,0.8,1.6,3.8],w:{trail:1.6,road:1.4,stream:.6,water:.8,waterIn:.15,structure:1,down:.3,up:.2,slope:.9},notes:['Travels on trails and roads and can cover real distance.','May be with friends. Check runaway factors, phone and social media.']},
+ {id:'child13_15',label:'Youth, 13–15',ages:[13,15],q:[0.5,1.0,2.0,4.5],w:{trail:1.6,road:1.5,stream:.5,water:.8,waterIn:.15,structure:1,down:.3,up:.2,slope:.8},notes:['Travels like an adult hiker but takes more risks.','Runaway or despondent factors are common. Check phone, friends and social media.']},
+ {id:'hiker',label:'Hiker',q:[0.7,1.9,3.6,8.0],w:{trail:2.6,road:1.2,stream:1,water:.7,waterIn:.05,structure:.6,down:.8,up:.2,slope:.8},notes:['Most are found on or near a trail, often past a confusing junction.','Once lost, many follow drainages downhill.','Check trail junctions, decision points and the planned destination.']},
+ {id:'hunter',label:'Hunter',q:[0.6,1.3,2.1,4.6],w:{trail:.8,road:1.6,stream:1.5,water:.6,waterIn:.05,structure:.5,down:.6,up:.5,slope:.5},notes:['Travels off trail and often after dark. Many walk out to a road on their own.','Follows drainages and ridges. Check drainage bottoms and road edges.','Usually equipped to survive a night out.']},
+ {id:'gatherer',label:'Gatherer (berries, mushrooms)',q:[0.5,1.0,1.6,3.6],w:{trail:.7,road:1,stream:1.2,water:.6,waterIn:.05,structure:.5,down:.6,up:.2,slope:.7},notes:['Works with head down and becomes disoriented off trail.','Usually found in the same vegetation they were gathering in.']},
+ {id:'runner',label:'Runner',q:[0.9,2.1,3.6,6.0],w:{trail:3,road:2,stream:.4,water:.5,waterIn:.05,structure:.6,down:.4,up:.1,slope:1},notes:['Stays on trails and roads. Often injured or overextended rather than lost.','Lightly dressed. Urgency rises fast in cold or wet weather.']},
+ {id:'dementia',label:'Dementia',q:[0.2,0.5,1.2,3.5],w:{trail:.8,road:2,stream:1.6,water:1,waterIn:.15,structure:1.6,down:.5,up:0,slope:1.6},notes:['Often travels in a straight line until stopped by brush, fences or terrain.','Frequently found in a drainage or caught in dense vegetation, and usually close to a road.','Rarely answers calls or self-rescues. Searchers must look into cover.','Survival drops sharply after 24 hours.']},
+ {id:'autism',label:'Autism',q:[0.2,0.5,1.4,3.5],w:{trail:.6,road:.6,stream:2,water:3,waterIn:1,structure:1,down:.4,up:0,slope:1},notes:['Strong attraction to water. Search every pond, stream, pool and drainage first.','May hide in small spaces and may not respond to their name.','Ask caregivers about favorite places and anything that calms them.']},
+ {id:'intellectual',label:'Intellectual disability',q:[0.3,0.7,1.6,4.0],w:{trail:1,road:1,stream:.8,water:1,waterIn:.2,structure:1.2,down:.4,up:.1,slope:1},notes:['May hide from searchers or not realize they are lost.','Often drawn to familiar places and routines. Ask caregivers.']},
+ {id:'despondent',label:'Despondent / at risk',q:[0.3,0.7,2.0,5.0],w:{trail:1,road:1.2,stream:.5,water:1.3,waterIn:.2,structure:1,down:0,up:1,slope:.6},notes:['Often found near their vehicle, a road, a scenic overlook or a place with personal meaning.','Check high points with a view and water edges.','Treat as urgent and coordinate with law enforcement and crisis resources.']},
+ {id:'psychotic',label:'Psychotic illness',q:[0.3,1.0,2.5,6.0],w:{trail:1,road:1.2,stream:.8,water:1,waterIn:.2,structure:.8,down:.3,up:.3,slope:.6},notes:['Travel can be unpredictable and long. May avoid searchers.','Coordinate approach with law enforcement.']}
+];
+const MED=[
+ {id:'mobility',label:'Limited mobility (cane, walker)',dist:.5,slope:2,urg:1,note:'Limited mobility keeps the likely area small and on flatter ground.'},
+ {id:'cardiac',label:'Heart or breathing condition',dist:.8,slope:1.5,urg:2,note:'Heart or breathing condition: may be found collapsed. Search close to likely travel routes.'},
+ {id:'diabetes',label:'Diabetes (insulin)',dist:.9,urg:2,note:'Diabetic: low blood sugar can cause confusion and erratic travel.'},
+ {id:'meds',label:'Needs critical medication',urg:2,note:'Missed critical medication: urgency rises with every hour.'},
+ {id:'seizure',label:'Seizure disorder',dist:.9,urg:2,note:'Seizure disorder: may be found immobile near travel routes or water.'},
+ {id:'vision',label:'Low vision or blind',dist:.6,path:1.5,urg:1,note:'Low vision: likely to stay on roads, trails and other easy surfaces.'},
+ {id:'hearing',label:'Deaf, hard of hearing or nonverbal',urg:1,note:'Will not hear or answer calls. Lean on visual search and thermal imaging.'},
+ {id:'alcohol',label:'Alcohol or drug impaired',dist:.7,water:1.4,urg:1,note:'Impaired: higher risk near water and roads. May be asleep in cover.'}
+];
+const WX={mild:{d:1,u:0,t:'Mild'},hot:{d:.85,u:1,t:'Hot'},cold:{d:.85,u:2,t:'Cold'},wetcold:{d:.8,u:3,t:'Wet and cold'},storm:{d:.7,u:3,t:'Storm'}};
+
+// populate
+const catSel=$('cat');
+CATS.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.label;catSel.appendChild(o)});
+catSel.value='dementia';
+MED.forEach(m=>{const l=document.createElement('label');l.htmlFor='m_'+m.id;l.innerHTML='<input type="checkbox" id="m_'+m.id+'"> '+m.label;$('medList').appendChild(l)});
+$('m_mobility').checked=true;$('m_hearing').checked=true;
+function setQ(){const c=CATS.find(c=>c.id===catSel.value);['q25','q50','q75','q95'].forEach((k,i)=>$(k).value=c.q[i])}
+setQ();
+
+// ---------- procedural world ----------
+function hash(ix,iy){let h=Math.imul(ix,374761393)+Math.imul(iy,668265263)+1013904223|0;h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;return (h>>>0)/4294967295}
+function vnoise(x,y){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
+ const a=hash(ix,iy),b=hash(ix+1,iy),c=hash(ix,iy+1),d=hash(ix+1,iy+1);return a+(b-a)*sx+(c-a)*sy+(a-b-c+d)*sx*sy}
+function fbm(x,y,o=5){let s=0,a=1,f=1,n=0;for(let i=0;i<o;i++){s+=a*(vnoise(x*f,y*f)*2-1);n+=a;a*=.5;f*=2.03}return s/n}
+function elevAt(x,y){let e=360+380*fbm(x*.55+11.3,y*.55-7.1);const dx=x-1.4,dy=y+.9;e-=320*Math.exp(-(dx*dx+dy*dy)/.35);return e}
+const WL=110;
+const yR1=x=>.9+.35*Math.sin(x*.7)+.15*Math.sin(x*1.9);
+const xR2=y=>-1.6+.3*Math.sin(y*.9)+.1*Math.sin(y*2.3);
+const PROC=(function(){
+ const roads=[[],[],[]];for(let x=-20;x<=20;x+=.08)roads[0].push([x,yR1(x)]);
+ for(let y=-20;y<=20;y+=.08)roads[1].push([xR2(y),y]);
+ for(let x=-1.75;x<=14;x+=.08)roads[2].push([x,-2.6+.5*Math.sin((x+1.75)*.5)]);
+ const trails=[[],[],[],[]];
+ for(let y=yR1(.6);y<=1.45;y+=.04)trails[0].push([.6,y]);
+ for(let t=0;t<=Math.PI*2+.01;t+=.08)trails[1].push([.9+.55*Math.cos(t+Math.PI*1.2)+.1*Math.sin(3*t),1.95+.5*Math.sin(t+Math.PI*1.2)]);
+ for(let x=xR2(-.4);x<=1.05;x+=.05)trails[2].push([x,-.4-.4*Math.sin((x+1.6)*1.1)]);
+ for(let s=0;s<=1.0001;s+=.01){const x=2.5+s*5.5,y=yR1(2.5)+s*(-6.5)+.4*Math.sin(s*12);trails[3].push([x,y])}
+ const bld=[];
+ roads[0].forEach(([x,y],i)=>{if(i%3===0&&Math.abs(x)<9&&hash(i,7)<.32){const s=hash(i,9)<.5?1:-1;bld.push([x,y+s*.05])}});
+ roads[1].forEach(([x,y],i)=>{if(i%3===0&&Math.abs(y)<9&&hash(i,17)<.3){const s=hash(i,19)<.5?1:-1;bld.push([x+s*.05,y])}});
+ for(let a=0;a<4;a++)for(let b=0;b<3;b++)bld.push([-1.35+a*.075,1.25+b*.07]);
+ bld.push([.2,yR1(.2)+.045]);
+ return{roads,trails,bld};
+})();
+
+// ---------- state ----------
+const S={mode:'sample',lkp:{x:.2,y:yR1(.2)+.045},center:{x:.2,y:yR1(.2)+.045},tool:'lkp',img:null,
+ user:[],drawing:null,tcache:null,result:null};
+
+function view(){
+ if(S.mode==='image'&&S.img){const W=+$('imgW').value||3,H=W*S.img.height/S.img.width;return{cx:0,cy:0,side:Math.max(W,H),N:220,iw:W,ih:H}}
+ const r=S.r95||3.5;return{cx:S.center.x,cy:S.center.y,side:Math.max(1.5,2*r*1.18),N:220}
+}
+
+// ---------- terrain grid ----------
+function buildTerrain(v){
+ const key=[S.mode,v.cx.toFixed(4),v.cy.toFixed(4),v.side.toFixed(4),v.N].join('|');
+ if(S.tcache&&S.tcache.key===key)return S.tcache;
+ const N=v.N,c=v.side/N,x0=v.cx-v.side/2,y0=v.cy+v.side/2;
+ const T={key,N,c,x0,y0,elev:null,water:new Uint8Array(N*N),streamMask:new Uint8Array(N*N),streamSegs:[],base:null,contours:null};
+ if(S.mode==='sample'){
+  const E=new Float32Array(N*N);let mn=1e9,mx=-1e9;
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const e=elevAt(x0+(i+.5)*c,y0-(j+.5)*c);E[j*N+i]=e;if(e<mn)mn=e;if(e>mx)mx=e;if(e<WL)T.water[j*N+i]=1}
+  T.elev=E;T.mn=mn;T.mx=mx;
+  // D8 flow accumulation
+  const idx=Array.from({length:N*N},(_,k)=>k).sort((a,b)=>E[b]-E[a]);
+  const acc=new Float32Array(N*N).fill(c*c),down=new Int32Array(N*N).fill(-1);
+  for(const k of idx){const i=k%N,j=(k/N)|0;let best=-1,bd=0;
+   for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){if(!di&&!dj)continue;const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=N||jj>=N)continue;
+    const kk=jj*N+ii,drop=(E[k]-E[kk])/(di&&dj?1.414:1);if(drop>bd){bd=drop;best=kk}}
+   down[k]=best;if(best>=0)acc[best]+=acc[k]}
+  const thr=Math.max(.12,30*c*c);
+  for(let k=0;k<N*N;k++)if(acc[k]>thr&&!T.water[k])T.streamMask[k]=1;
+  for(let k=0;k<N*N;k++)if(T.streamMask[k]&&down[k]>=0)T.streamSegs.push([k%N,(k/N)|0,down[k]%N,(down[k]/N)|0,Math.min(2.4,.8+Math.log10(acc[k]/thr+1)*1.4)]);
+  // base image
+  const cv=document.createElement('canvas');cv.width=cv.height=N;const g=cv.getContext('2d'),im=g.createImageData(N,N);
+  const L=[-.55,.55,.63],cf=c*5280,z=5;
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i,p=k*4;
+   if(T.water[k]){im.data[p]=150;im.data[p+1]=196;im.data[p+2]=226;im.data[p+3]=255;continue}
+   const eL=E[j*N+Math.max(0,i-1)],eR=E[j*N+Math.min(N-1,i+1)],eU=E[Math.max(0,j-1)*N+i],eD=E[Math.min(N-1,j+1)*N+i];
+   const gx=(eR-eL)/(2*cf)*z,gy=(eU-eD)/(2*cf)*z;const nl=Math.hypot(gx,gy,1);
+   const sh=Math.max(0,(-gx*L[0]-gy*L[1]+L[2])/nl);
+   const wx=x0+(i+.5)*c,wy=y0-(j+.5)*c;const forest=fbm(wx*1.3+50,wy*1.3-20,4)>-.08;
+   const b=forest?[203,226,192]:[244,245,238];const f=.72+.38*sh;
+   im.data[p]=Math.min(255,b[0]*f);im.data[p+1]=Math.min(255,b[1]*f);im.data[p+2]=Math.min(255,b[2]*f);im.data[p+3]=255}
+  g.putImageData(im,0,0);T.base=cv;
+  // contours
+  const range=mx-mn,nice=[10,20,25,40,50,100,200];let iv=nice.find(n=>range/n<=22)||200;T.iv=iv;
+  const minor=new Path2D(),major=new Path2D();
+  for(let lv=Math.ceil(mn/iv)*iv;lv<mx;lv+=iv){const P=(Math.round(lv/iv)%5===0)?major:minor;marching(E,N,lv,(a,b,cc,d)=>{P.moveTo(a+.5,b+.5);P.lineTo(cc+.5,d+.5)})}
+  T.contours={minor,major};
+ }
+ S.tcache=T;return T;
+}
+function marching(F,N,L,cb){
+ for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){
+  const a=F[j*N+i],b=F[j*N+i+1],c=F[(j+1)*N+i+1],d=F[(j+1)*N+i];
+  const code=(a>L?8:0)|(b>L?4:0)|(c>L?2:0)|(d>L?1:0);if(code===0||code===15)continue;
+  const T=()=>[i+(L-a)/(b-a),j],R=()=>[i+1,j+(L-b)/(c-b)],B=()=>[i+(L-d)/(c-d),j+1],Lf=()=>[i,j+(L-a)/(d-a)];
+  const s=(p,q)=>cb(p[0],p[1],q[0],q[1]);
+  switch(code){case 1:case 14:s(Lf(),B());break;case 2:case 13:s(B(),R());break;case 3:case 12:s(Lf(),R());break;
+   case 4:case 11:s(T(),R());break;case 6:case 9:s(T(),B());break;case 7:case 8:s(T(),Lf());break;
+   case 5:s(T(),Lf());s(B(),R());break;case 10:s(T(),R());s(Lf(),B());break}
+ }
+}
+function rasterLines(lines,T,mask){const{N,c,x0,y0}=T;
+ for(const ln of lines)for(let s=0;s<ln.length-1;s++){const[ax,ay]=ln[s],[bx,by]=ln[s+1];const len=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.ceil(len/(c*.5)));
+  for(let t=0;t<=n;t++){const x=ax+(bx-ax)*t/n,y=ay+(by-ay)*t/n;const i=Math.floor((x-x0)/c),j=Math.floor((y0-y)/c);if(i>=0&&j>=0&&i<N&&j<N)mask[j*N+i]=1}}}
+function rasterDisc(pts,T,mask){const{N,c,x0,y0}=T;for(const[x,y,r]of pts){const rr=Math.max(r||0,c*.5);
+ const i0=Math.floor((x-rr-x0)/c),i1=Math.floor((x+rr-x0)/c),j0=Math.floor((y0-y-rr)/c),j1=Math.floor((y0-y+rr)/c);
+ for(let j=Math.max(0,j0);j<=Math.min(N-1,j1);j++)for(let i=Math.max(0,i0);i<=Math.min(N-1,i1);i++){const cx=x0+(i+.5)*c,cy=y0-(j+.5)*c;if(Math.hypot(cx-x,cy-y)<=rr)mask[j*N+i]=1}}}
+function chamfer(mask,N,c){const D=new Float32Array(N*N),d2=c*1.4142;
+ for(let k=0;k<N*N;k++)D[k]=mask[k]?0:1e9;
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i;let v=D[k];
+  if(i>0)v=Math.min(v,D[k-1]+c);if(j>0){v=Math.min(v,D[k-N]+c);if(i>0)v=Math.min(v,D[k-N-1]+d2);if(i<N-1)v=Math.min(v,D[k-N+1]+d2)}D[k]=v}
+ for(let j=N-1;j>=0;j--)for(let i=N-1;i>=0;i--){const k=j*N+i;let v=D[k];
+  if(i<N-1)v=Math.min(v,D[k+1]+c);if(j<N-1){v=Math.min(v,D[k+N]+c);if(i<N-1)v=Math.min(v,D[k+N+1]+d2);if(i>0)v=Math.min(v,D[k+N-1]+d2)}D[k]=v}
+ return D}
+
+// ---------- model ----------
+function readInputs(){
+ const cat=CATS.find(c=>c.id===catSel.value);const age=+$('age').value;
+ const meds=MED.filter(m=>$('m_'+m.id).checked);const hours=Math.max(0,+$('hours').value||0);
+ const wx=WX[$('weather').value];const night=$('night').checked;
+ let q=['q25','q50','q75','q95'].map(k=>Math.max(.05,+$(k).value||.1));for(let i=1;i<4;i++)q[i]=Math.max(q[i],q[i-1]+.02);
+ const timeF=Math.min(1,.25+.75*Math.min(1,hours/10));
+ let medD=1,slopeM=1,pathM=1,waterM=1;meds.forEach(m=>{medD*=m.dist||1;slopeM*=m.slope||1;pathM*=m.path||1;waterM*=m.water||1});
+ const scale=timeF*medD*wx.d*(night?.85:1);
+ let urg=0;if(age<7)urg+=2;else if(age>=75)urg+=2;else if(age>=65)urg+=1;
+ meds.forEach(m=>urg+=m.urg);urg+=wx.u+(night?1:0)+(hours>24?2:hours>12?1:0);
+ if(['despondent','autism','child1_3'].includes(cat.id))urg+=1;
+ return{cat,age,meds,hours,wx,night,q,qa:q.map(v=>v*scale),scale,timeF,slopeM,pathM,waterM,urg,
+  head:$('useHead').checked?{b:(+$('heading').value||0)*Math.PI/180,k:+$('headConf').value}:null};
+}
+function compute(){
+ const P=readInputs();S.r95=P.qa[3];
+ const v=view();const T=buildTerrain(v);const{N,c,x0,y0}=T;
+ // feature masks
+ const road=new Uint8Array(N*N),trail=new Uint8Array(N*N),stream=T.streamMask.slice(),water=T.water.slice(),bld=new Uint8Array(N*N);
+ if(S.mode==='sample'){rasterLines(PROC.roads,T,road);rasterLines(PROC.trails,T,trail);rasterDisc(PROC.bld.map(p=>[p[0],p[1],.012]),T,bld)}
+ for(const f of S.user){if(f.t==='road')rasterLines([f.pts],T,road);else if(f.t==='trail')rasterLines([f.pts],T,trail);else if(f.t==='stream')rasterLines([f.pts],T,stream);
+  else if(f.t==='water')rasterDisc(f.pts,T,water);else if(f.t==='building')rasterDisc(f.pts.map(p=>[p[0],p[1],.012]),T,bld)}
+ const any=m=>m.some(v=>v);
+ const Dr=any(road)?chamfer(road,N,c):null,Dt=any(trail)?chamfer(trail,N,c):null,Ds=any(stream)?chamfer(stream,N,c):null,
+  Dw=any(water)?chamfer(water,N,c):null,Db=any(bld)?chamfer(bld,N,c):null;
+ const w=P.cat.w,Lr=.07;
+ const qa=P.qa,cdfR=[0,qa[0],qa[1],qa[2],qa[3],qa[3]*1.8],cdfV=[0,.25,.5,.75,.95,1];
+ const E=T.elev;const eL=E?elevAt(S.lkp.x,S.lkp.y):0;const er=E?Math.max(60,T.mx-T.mn):1;const cf=c*5280;
+ const p=new Float64Array(N*N);let distMass=0,sum=0;
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i;const x=x0+(i+.5)*c,y=y0-(j+.5)*c;
+  const dx=x-S.lkp.x,dy=y-S.lkp.y,r=Math.hypot(dx,dy),re=Math.max(r,c*.7);
+  let s=4;for(let n=1;n<cdfR.length;n++)if(r<cdfR[n]){s=n-1;break}
+  let dens=r>=cdfR[5]?.02/(cdfR[5]*cdfR[5]*Math.PI)*Math.exp(-(r-cdfR[5])/cdfR[4]):(cdfV[s+1]-cdfV[s])/(cdfR[s+1]-cdfR[s])/(2*Math.PI*re);
+  distMass+=dens*c*c;
+  let m=1;
+  if(Dr)m*=1+w.road*P.pathM*Math.exp(-Dr[k]/Lr);
+  if(Dt)m*=1+w.trail*P.pathM*Math.exp(-Dt[k]/Lr);
+  if(Ds)m*=1+w.stream*Math.exp(-Ds[k]/Lr);
+  if(Db)m*=1+w.structure*Math.exp(-Db[k]/(Lr*.8));
+  if(Dw){if(water[k])m*=w.waterIn*P.waterM;else m*=1+w.water*P.waterM*Math.exp(-Dw[k]/Lr)}
+  if(E){const eU=E[Math.max(0,j-1)*N+i],eD=E[Math.min(N-1,j+1)*N+i],eLf=E[j*N+Math.max(0,i-1)],eR=E[j*N+Math.min(N-1,i+1)];
+   const grade=Math.hypot((eR-eLf)/(2*cf),(eU-eD)/(2*cf));m*=Math.exp(-w.slope*P.slopeM*grade*8);
+   const dz=(E[k]-eL)/er;m*=dz>0?Math.exp(w.up*dz*2.2):Math.exp(w.down*(-dz)*2.2)}
+  if(P.head&&r>.03){const ang=Math.atan2(dx,dy);m*=Math.exp(P.head.k*(Math.cos(ang-P.head.b)-1))}
+  p[k]=dens*m;sum+=p[k]}
+ for(let k=0;k<N*N;k++)p[k]/=sum;
+ // rank
+ const ord=Array.from({length:N*N},(_,k)=>k).sort((a,b)=>p[b]-p[a]);const C=new Float32Array(N*N);let acc=0;for(const k of ord){acc+=p[k];C[k]=acc}
+ // segments
+ const SG=8,segs=[];for(let sj=0;sj<SG;sj++)for(let si=0;si<SG;si++)segs.push({id:String.fromCharCode(65+si)+(sj+1),poa:0});
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){segs[Math.floor(j*SG/N)*SG+Math.floor(i*SG/N)].poa+=p[j*N+i]}
+ const segA=(v.side/SG)**2;segs.forEach(s=>s.area=segA);
+ S.result={P,v,T,p,C,segs,SG,distMass,road,trail,water,bld};
+ draw();report();
+}
+
+// ---------- drawing ----------
+const cv=$('map'),ctx=cv.getContext('2d');
+let heatCanvas=null;
+function fitCanvas(){const r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1;const W=Math.round(r.width*d);if(cv.width!==W){cv.width=cv.height=W}return W}
+function draw(){
+ const R=S.result;if(!R)return;const W=fitCanvas();const{v,T,C}=R;const N=T.N;const sc=W/N;
+ const toS=(x,y)=>[(x-(v.cx-v.side/2))/v.side*W,((v.cy+v.side/2)-y)/v.side*W];
+ ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#F2F3EE';ctx.fillRect(0,0,W,W);
+ if(S.mode==='image'&&S.img){const[a,b]=toS(-v.iw/2,v.ih/2),[c2,d]=toS(v.iw/2,-v.ih/2);ctx.drawImage(S.img,a,b,c2-a,d-b)}
+ else if(T.base){ctx.imageSmoothingEnabled=true;ctx.drawImage(T.base,0,0,W,W)}
+ const px=W/700;
+ if(T.contours&&$('lCont').checked){ctx.save();ctx.scale(sc,sc);ctx.strokeStyle='rgba(150,105,60,.55)';ctx.lineWidth=.7*px/sc;ctx.stroke(T.contours.minor);ctx.strokeStyle='rgba(130,85,45,.85)';ctx.lineWidth=1.4*px/sc;ctx.stroke(T.contours.major);ctx.restore()}
+ // streams
+ ctx.save();ctx.strokeStyle='#2F7FC1';ctx.lineCap='round';
+ for(const s of T.streamSegs){ctx.lineWidth=s[4]*px;ctx.beginPath();ctx.moveTo((s[0]+.5)*sc,(s[1]+.5)*sc);ctx.lineTo((s[2]+.5)*sc,(s[3]+.5)*sc);ctx.stroke()}
+ ctx.restore();
+ const line=(pts,col,wd,dash)=>{ctx.save();ctx.strokeStyle=col;ctx.lineWidth=wd*px;ctx.lineJoin=ctx.lineCap='round';if(dash)ctx.setLineDash(dash.map(d=>d*px));ctx.beginPath();pts.forEach((p,i)=>{const[a,b]=toS(p[0],p[1]);i?ctx.lineTo(a,b):ctx.moveTo(a,b)});ctx.stroke();ctx.restore()};
+ const bldg=(pts)=>{ctx.fillStyle='#1E1E1E';pts.forEach(p=>{const[a,b]=toS(p[0],p[1]);const s=Math.max(3*px,.018/v.side*W);ctx.fillRect(a-s/2,b-s/2,s,s)})};
+ const waterD=(pts)=>{ctx.fillStyle='#96C4E2';pts.forEach(p=>{const[a,b]=toS(p[0],p[1]);ctx.beginPath();ctx.arc(a,b,p[2]/v.side*W,0,7);ctx.fill()})};
+ if(S.mode==='sample'){PROC.roads.forEach(r=>{line(r,'#FFFFFF',5);line(r,'#C23B22',2.6)});PROC.trails.forEach(t=>line(t,'#5B3A1E',1.6,[5,4]));bldg(PROC.bld)}
+ for(const f of S.user.concat(S.drawing?[S.drawing]:[])){
+  if(f.t==='road'){line(f.pts,'#FFFFFF',5);line(f.pts,'#C23B22',2.6)}else if(f.t==='trail')line(f.pts,'#5B3A1E',1.8,[5,4]);
+  else if(f.t==='stream')line(f.pts,'#2F7FC1',2);else if(f.t==='water')waterD(f.pts);else if(f.t==='building')bldg(f.pts)}
+ // heat
+ if($('lHeat').checked){
+  if(!heatCanvas){heatCanvas=document.createElement('canvas')}heatCanvas.width=heatCanvas.height=N;
+  const g=heatCanvas.getContext('2d'),im=g.createImageData(N,N);
+  const cols=[[179,18,46,175],[232,80,28,150],[244,155,43,120],[248,212,92,95]];
+  for(let k=0;k<N*N;k++){const cc=C[k];const b=cc<=.25?0:cc<=.5?1:cc<=.75?2:cc<=.95?3:-1;if(b<0)continue;const q=cols[b],o=k*4;im.data[o]=q[0];im.data[o+1]=q[1];im.data[o+2]=q[2];im.data[o+3]=q[3]}
+  g.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(heatCanvas,0,0,W,W);
+  const negC=new Float32Array(N*N);for(let k=0;k<N*N;k++)negC[k]=-C[k];
+  [[.25,'#7A0B1F',2],[.5,'#B23A12',1.6],[.75,'#B8701A',1.3],[.95,'#9A7C1C',1.1]].forEach(([lv,col,wd])=>{ctx.save();ctx.strokeStyle=col;ctx.lineWidth=wd*px;ctx.beginPath();
+   marching(negC,N,-lv,(a,b,c2,d)=>{ctx.moveTo((a+.5)*sc,(b+.5)*sc);ctx.lineTo((c2+.5)*sc,(d+.5)*sc)});ctx.stroke();ctx.restore()});
+ }
+ // rings
+ const[lx,ly]=toS(S.lkp.x,S.lkp.y);
+ if($('lRings').checked){ctx.save();ctx.font=`600 ${11*px}px "IBM Plex Mono",monospace`;
+  R.P.qa.forEach((r,i)=>{ctx.strokeStyle='rgba(27,36,30,.75)';ctx.setLineDash([6*px,5*px]);ctx.lineWidth=1.2*px;ctx.beginPath();ctx.arc(lx,ly,r/v.side*W,0,7);ctx.stroke();
+   const lab=['25%','50%','75%','95%'][i]+' '+fmt(r)+' mi';const tx=lx+r/v.side*W*.7071+3*px,ty=ly-r/v.side*W*.7071;
+   ctx.setLineDash([]);ctx.lineWidth=3*px;ctx.strokeStyle='rgba(255,255,255,.9)';ctx.strokeText(lab,tx,ty);ctx.fillStyle='#1B241E';ctx.fillText(lab,tx,ty)});ctx.restore()}
+ // segments
+ if($('lSeg').checked){ctx.save();ctx.strokeStyle='rgba(27,36,30,.45)';ctx.lineWidth=1*px;const SG=R.SG,st=W/SG;ctx.beginPath();
+  for(let n=1;n<SG;n++){ctx.moveTo(n*st,0);ctx.lineTo(n*st,W);ctx.moveTo(0,n*st);ctx.lineTo(W,n*st)}ctx.stroke();
+  ctx.font=`600 ${10.5*px}px "IBM Plex Mono",monospace`;ctx.textBaseline='top';
+  for(let sj=0;sj<SG;sj++)for(let si=0;si<SG;si++){const t=String.fromCharCode(65+si)+(sj+1);ctx.lineWidth=3*px;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.strokeText(t,si*st+4*px,sj*st+4*px);ctx.fillStyle='#1B241E';ctx.fillText(t,si*st+4*px,sj*st+4*px)}ctx.restore()}
+ // heading
+ if(R.P.head){ctx.save();const L=R.P.qa[1]/v.side*W;ctx.strokeStyle='#1B241E';ctx.lineWidth=2*px;ctx.beginPath();ctx.moveTo(lx,ly);const ex=lx+Math.sin(R.P.head.b)*L,ey=ly-Math.cos(R.P.head.b)*L;ctx.lineTo(ex,ey);ctx.stroke();
+  ctx.beginPath();const a=R.P.head.b;ctx.moveTo(ex,ey);ctx.lineTo(ex-Math.sin(a-.4)*9*px,ey+Math.cos(a-.4)*9*px);ctx.lineTo(ex-Math.sin(a+.4)*9*px,ey+Math.cos(a+.4)*9*px);ctx.closePath();ctx.fillStyle='#1B241E';ctx.fill();ctx.restore()}
+ // LKP
+ ctx.save();ctx.beginPath();ctx.arc(lx,ly,8*px,0,7);ctx.fillStyle='#D9531E';ctx.fill();ctx.lineWidth=2.5*px;ctx.strokeStyle='#FFFFFF';ctx.stroke();ctx.beginPath();ctx.arc(lx,ly,2.5*px,0,7);ctx.fillStyle='#FFFFFF';ctx.fill();
+ ctx.font=`700 ${14*px}px "Barlow Condensed",sans-serif`;ctx.lineWidth=3.5*px;ctx.strokeStyle='#FFFFFF';ctx.strokeText('LKP',lx+11*px,ly+5*px);ctx.fillStyle='#1B241E';ctx.fillText('LKP',lx+11*px,ly+5*px);ctx.restore();
+ // scale bar + north
+ ctx.save();const target=v.side/5,opts=[.05,.1,.25,.5,1,2,5,10];const len=opts.reduce((a,b)=>Math.abs(b-target)<Math.abs(a-target)?b:a);const lp=len/v.side*W;
+ const bx=14*px,by=W-18*px;ctx.fillStyle='rgba(255,255,255,.88)';ctx.fillRect(bx-6*px,by-20*px,lp+70*px,28*px);
+ ctx.fillStyle='#1B241E';ctx.fillRect(bx,by,lp,4*px);ctx.fillStyle='#FFFFFF';ctx.fillRect(bx+lp/2,by+1*px,lp/2-1*px,2*px);
+ ctx.fillStyle='#1B241E';ctx.font=`500 ${11*px}px "IBM Plex Mono",monospace`;ctx.fillText(len+' mi',bx+lp+6*px,by+5*px);
+ if(T.iv){ctx.fillText('Contours '+T.iv+' ft',bx,by-7*px)}
+ const nx=W-24*px,ny=26*px;ctx.beginPath();ctx.moveTo(nx,ny-14*px);ctx.lineTo(nx+7*px,ny+6*px);ctx.lineTo(nx,ny+2*px);ctx.lineTo(nx-7*px,ny+6*px);ctx.closePath();ctx.fillStyle='#1B241E';ctx.fill();
+ ctx.font=`700 ${13*px}px "Barlow Condensed",sans-serif`;ctx.textAlign='center';ctx.fillText('N',nx,ny+20*px);ctx.restore();
+ if(S.mode==='image'&&!S.img){ctx.fillStyle='rgba(27,36,30,.7)';ctx.font=`500 ${15*px}px "IBM Plex Sans",sans-serif`;ctx.textAlign='center';ctx.fillText('Load a map image to begin',W/2,W/2-30*px)}
+}
+const fmt=r=>r<1?r.toFixed(2):r.toFixed(1);
+
+// ---------- report ----------
+function report(){
+ const R=S.result,P=R.P;const u=P.urg;const lvl=u>=7?['Critical','var(--crit)']:u>=5?['High','var(--crit)']:u>=3?['Elevated','var(--warn)']:['Moderate','var(--ok)'];
+ $('urg').querySelector('i').style.background=lvl[1];$('urg').querySelector('span').textContent='Urgency: '+lvl[0];
+ const rows=[['Subject',($('name').value||'Unnamed')+', age '+P.age],['Category',P.cat.label],['Medical',P.meds.length?P.meds.map(m=>m.label).join('; '):'None entered'],
+  ['LKP',$('lkpNote').value||'—'],['Time since LKP',P.hours+' h'],['Conditions',P.wx.t+(P.night?', after dark':'')],
+  ['Rings (mi)',P.qa.map(fmt).join(' / ')],['Adjustment','× '+P.scale.toFixed(2)+' of category distances']];
+ if(P.head)rows.splice(6,0,['Direction',Math.round(+$('heading').value)+'°']);
+ $('summary').innerHTML=rows.map(r=>`<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('');
+ const top=R.segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,8);const mx=top[0].poa;
+ $('segBody').innerHTML=top.map(s=>`<tr><td><b>${s.id}</b></td><td class="num">${(s.poa*100).toFixed(1)}%</td><td class="num">${s.area.toFixed(2)}</td><td class="num">${(s.poa*100/s.area).toFixed(1)}</td><td><div class="bar" style="width:${(s.poa/mx*100).toFixed(0)}%"></div></td></tr>`).join('');
+ const notes=P.cat.notes.concat(P.meds.map(m=>m.note));
+ if(P.night||P.wx.u>=2)notes.push('Thermal drone flights are most effective now: a cold background makes a warm subject stand out.');
+ if(P.hours<1)notes.push('Early in the incident: rings are shrunk to reflect limited travel time. Prioritize hasty search of the LKP area and travel routes.');
+ $('notes').innerHTML=notes.map(n=>`<li>${esc(n)}</li>`).join('');
+ const mw=$('massWarn');if(R.distMass<.9){mw.hidden=false;mw.textContent=`About ${Math.round((1-R.distMass)*100)}% of the distance model falls outside this map. `+(S.mode==='image'?'Use a wider map image.':'Center the map on the LKP.')}else mw.hidden=true;
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+$('copy').addEventListener('click',()=>{const R=S.result,P=R.P;
+ const top=R.segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,8);
+ const txt=['SAR PROBABILITY SUMMARY',...[...$('summary').querySelectorAll('dt')].map(dt=>dt.textContent+': '+dt.nextElementSibling.textContent),
+  $('urg').textContent.trim(),'','Top segments (POA):',...top.map(s=>`  ${s.id}  ${(s.poa*100).toFixed(1)}%`),'','Notes:',...[...$('notes').children].map(li=>'- '+li.textContent)].join('\n');
+ const ok=()=>{$('copyMsg').textContent='Copied to clipboard'};
+ try{navigator.clipboard.writeText(txt).then(ok,()=>{$('copyMsg').textContent='Copy was blocked by the browser'})}catch(e){$('copyMsg').textContent='Copy was blocked by the browser'}});
+
+// ---------- interaction ----------
+let t0=null;function schedule(){clearTimeout(t0);t0=setTimeout(compute,60)}
+document.querySelectorAll('.rail input,.rail select').forEach(el=>{if(el.id!=='imgFile')el.addEventListener('input',schedule)});
+catSel.addEventListener('change',()=>{setQ();schedule()});
+$('age').addEventListener('change',()=>{const a=+$('age').value;const c=CATS.find(c=>c.ages&&a>=c.ages[0]&&a<=c.ages[1]);if(c&&catSel.value!==c.id){catSel.value=c.id;setQ();schedule()}});
+$('resetQ').addEventListener('click',()=>{setQ();schedule()});
+['lHeat','lRings','lSeg','lCont'].forEach(id=>$(id).addEventListener('change',draw));
+const hints={lkp:'Tool: place last known point',road:'Tool: drag to draw a road',trail:'Tool: drag to draw a trail',stream:'Tool: drag to draw a stream or drainage',water:'Tool: drag to paint water',building:'Tool: tap to add a building'};
+$('tools').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.tool=b.dataset.tool;
+ [...$('tools').children].forEach(x=>x.setAttribute('aria-pressed',x===b));$('toolHint').textContent=hints[S.tool]});
+function world(e){const r=cv.getBoundingClientRect(),v=S.result.v;return[v.cx-v.side/2+(e.clientX-r.left)/r.width*v.side,v.cy+v.side/2-(e.clientY-r.top)/r.height*v.side]}
+cv.addEventListener('pointerdown',e=>{if(!S.result)return;const[x,y]=world(e);
+ if(S.tool==='lkp'){S.lkp={x,y};compute();return}
+ if(S.tool==='building'){S.user.push({t:'building',pts:[[x,y]]});compute();return}
+ cv.setPointerCapture(e.pointerId);
+ S.drawing={t:S.tool,pts:S.tool==='water'?[[x,y,S.result.v.side/45]]:[[x,y]]};draw()});
+cv.addEventListener('pointermove',e=>{if(!S.drawing)return;const[x,y]=world(e);const pts=S.drawing.pts,l=pts[pts.length-1],v=S.result.v;
+ if(Math.hypot(x-l[0],y-l[1])>v.side/250){pts.push(S.drawing.t==='water'?[x,y,v.side/45]:[x,y]);draw()}});
+const endDraw=()=>{if(!S.drawing)return;if(S.drawing.pts.length>1||S.drawing.t==='water')S.user.push(S.drawing);S.drawing=null;compute()};
+cv.addEventListener('pointerup',endDraw);cv.addEventListener('pointercancel',endDraw);
+$('undo').addEventListener('click',()=>{S.user.pop();compute()});
+$('clearDraw').addEventListener('click',()=>{S.user=[];compute()});
+$('recenter').addEventListener('click',()=>{if(S.mode==='sample'){S.center={...S.lkp};compute()}});
+function setMode(m){S.mode=m;$('modeSample').setAttribute('aria-pressed',m==='sample');$('modeImage').setAttribute('aria-pressed',m==='image');
+ $('imgControls').hidden=m!=='image';$('recenter').hidden=m!=='sample';S.user=[];
+ if(m==='image')S.lkp={x:0,y:0};else{S.lkp={x:.2,y:yR1(.2)+.045};S.center={...S.lkp}}S.tcache=null;compute()}
+$('modeSample').addEventListener('click',()=>setMode('sample'));
+$('modeImage').addEventListener('click',()=>setMode('image'));
+$('imgFile').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{S.img=im;S.tcache=null;S.lkp={x:0,y:0};compute()};im.src=r.result};r.readAsDataURL(f)});
+$('imgW').addEventListener('input',()=>{S.tcache=null});
+window.addEventListener('resize',()=>{clearTimeout(t0);t0=setTimeout(draw,80)});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>draw());
+compute();
+})();
+</script>
+
+</body></html>
