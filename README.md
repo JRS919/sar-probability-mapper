@@ -12,9 +12,21 @@ It runs entirely in the browser: one `index.html` file, no server, no accounts, 
 - Shows the result as a probability heat map, distance rings, segments or contours.
 - Lists a segment priority table with probability of area (POA), area and POA density, plus an incident summary you can copy.
 
-## Using your own map
+## Maps
 
-Load a topo or aerial screenshot (CalTopo, Google Earth or USGS) with north up, enter its width in miles, then trace roads, trails, streams, water and buildings with the drawing tools so the model can use them.
+**OpenStreetMap (default).** Search an address or coordinates, or tap **My location**, then tap the map to place the LKP. The app loads automatically:
+
+- the OpenStreetMap base map
+- roads, trails, streams, ponds and lakes, and buildings (buildings only when the map covers about 7 miles or less), from the Overpass API
+- elevation for slope and uphill/downhill weighting, from Terrain Tiles on AWS (USGS 3DEP, SRTM)
+
+Use the drawing tools to add anything the map is missing, like logging roads or game trails. This mode needs an internet connection.
+
+**Sample terrain.** A generated practice area that works offline.
+
+**My map image.** Load a topo or aerial screenshot (CalTopo, Google Earth or USGS) with north up, enter its width in miles, then trace roads, trails, streams, water and buildings so the model can use them.
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
 
 ## Running it
 

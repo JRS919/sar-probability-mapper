@@ -84,7 +84,7 @@ ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;m
 
 <header class="top">
   <h1>SAR <span>Probability</span> Mapper</h1>
-  <p>Prototype. A sample incident is loaded on generated terrain. Change the subject, place the last known point, or load your own topo or aerial map.</p>
+  <p>Prototype. Search an address or coordinates, or tap the map to place the last known point. Roads, trails, water and terrain load from OpenStreetMap automatically.</p>
 </header>
 
 <div class="app">
@@ -104,7 +104,7 @@ ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;m
 
     <fieldset>
       <legend>Incident</legend>
-      <label for="lkpNote">LKP description or coordinates<input id="lkpNote" type="text" value="Residence, last seen on porch"></label>
+      <label for="lkpNote">LKP description or coordinates<input id="lkpNote" type="text" value="Sample LKP, Umstead State Park"></label>
       <div class="row">
         <label for="hours">Hours since LKP<input id="hours" type="number" min="0" step="0.5" value="4"></label>
         <label for="weather">Weather<select id="weather">
@@ -122,8 +122,17 @@ ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;m
     <fieldset>
       <legend>Map</legend>
       <div class="seg" role="group" aria-label="Map source">
-        <button id="modeSample" aria-pressed="true">Sample terrain</button>
+        <button id="modeOsm" aria-pressed="true">OpenStreetMap</button>
+        <button id="modeSample" aria-pressed="false">Sample terrain</button>
         <button id="modeImage" aria-pressed="false">My map image</button>
+      </div>
+      <div id="osmControls">
+        <label for="goTo">Go to address or coordinates<input id="goTo" type="text" placeholder="123 Main St, Apex NC  or  35.87, -78.75" autocomplete="off"></label>
+        <div class="row" style="margin-top:8px">
+          <button class="btn primary" id="goBtn">Go</button>
+          <button class="btn" id="myLoc">My location</button>
+        </div>
+        <p class="hint" style="margin-top:6px">Roads, trails, streams, water and buildings load from OpenStreetMap. Draw anything the map is missing, like logging roads or game trails.</p>
       </div>
       <div id="imgControls" hidden>
         <label for="imgFile">Topo or aerial screenshot<input id="imgFile" type="file" accept="image/*"></label>
@@ -179,6 +188,8 @@ ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;m
         <span><i class="sw" style="border:1.5px dashed #1B241E;background:transparent"></i>Distance rings</span>
       </div>
       <p class="warnline" id="massWarn" hidden></p>
+      <p class="hint" id="mapStatus" aria-live="polite"></p>
+      <p class="hint" id="osmAttr">Map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Elevation from Terrain Tiles on AWS (USGS 3DEP, SRTM).</p>
     </div>
 
     <div class="results">
@@ -270,8 +281,17 @@ const PROC=(function(){
 })();
 
 // ---------- state ----------
-const S={mode:'sample',lkp:{x:.2,y:yR1(.2)+.045},center:{x:.2,y:yR1(.2)+.045},tool:'lkp',img:null,
- user:[],drawing:null,tcache:null,result:null};
+const S={mode:'osm',origin:{lat:35.8676,lon:-78.7516},lkp:{x:0,y:0},center:{x:0,y:0},tool:'lkp',img:null,
+ user:[],drawing:null,tcache:null,result:null,feat:null};
+
+// ---------- geo helpers (local frame: miles east/north of S.origin) ----------
+const MI_M=1609.344,RAD=Math.PI/180;
+function w2ll(x,y){const o=S.origin;return[o.lat+y*MI_M/111320,o.lon+x*MI_M/(111320*Math.cos(o.lat*RAD))]}
+function ll2w(lat,lon){const o=S.origin;return[(lon-o.lon)*111320*Math.cos(o.lat*RAD)/MI_M,(lat-o.lat)*111320/MI_M]}
+function ll2px(lat,lon,z){const n=256*Math.pow(2,z),sn=Math.sin(lat*RAD);return[(lon+180)/360*n,(.5-Math.log((1+sn)/(1-sn))/(4*Math.PI))*n]}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function status(t){$('mapStatus').textContent=t||''}
+let rafD=0;function scheduleDraw(){if(!rafD)rafD=requestAnimationFrame(()=>{rafD=0;draw()})}
 
 function view(){
  if(S.mode==='image'&&S.img){const W=+$('imgW').value||3,H=W*S.img.height/S.img.width;return{cx:0,cy:0,side:Math.max(W,H),N:220,iw:W,ih:H}}
@@ -280,7 +300,7 @@ function view(){
 
 // ---------- terrain grid ----------
 function buildTerrain(v){
- const key=[S.mode,v.cx.toFixed(4),v.cy.toFixed(4),v.side.toFixed(4),v.N].join('|');
+ const key=[S.mode,S.origin.lat,S.origin.lon,v.cx.toFixed(4),v.cy.toFixed(4),v.side.toFixed(4),v.N].join('|');
  if(S.tcache&&S.tcache.key===key)return S.tcache;
  const N=v.N,c=v.side/N,x0=v.cx-v.side/2,y0=v.cy+v.side/2;
  const T={key,N,c,x0,y0,elev:null,water:new Uint8Array(N*N),streamMask:new Uint8Array(N*N),streamSegs:[],base:null,contours:null};
@@ -310,14 +330,113 @@ function buildTerrain(v){
    const b=forest?[203,226,192]:[244,245,238];const f=.72+.38*sh;
    im.data[p]=Math.min(255,b[0]*f);im.data[p+1]=Math.min(255,b[1]*f);im.data[p+2]=Math.min(255,b[2]*f);im.data[p+3]=255}
   g.putImageData(im,0,0);T.base=cv;
-  // contours
-  const range=mx-mn,nice=[10,20,25,40,50,100,200];let iv=nice.find(n=>range/n<=22)||200;T.iv=iv;
-  const minor=new Path2D(),major=new Path2D();
-  for(let lv=Math.ceil(mn/iv)*iv;lv<mx;lv+=iv){const P=(Math.round(lv/iv)%5===0)?major:minor;marching(E,N,lv,(a,b,cc,d)=>{P.moveTo(a+.5,b+.5);P.lineTo(cc+.5,d+.5)})}
-  T.contours={minor,major};
+  makeContours(T);
  }
- S.tcache=T;return T;
+ S.tcache=T;
+ if(S.mode==='osm')buildOSM(T,v);
+ return T;
 }
+function makeContours(T){
+ const{elev:E,N,mn,mx}=T;const range=mx-mn,nice=[5,10,20,25,40,50,100,200];let iv=nice.find(n=>range/n<=22)||200;T.iv=iv;
+ const minor=new Path2D(),major=new Path2D();
+ for(let lv=Math.ceil(mn/iv)*iv;lv<mx;lv+=iv){const P=(Math.round(lv/iv)%5===0)?major:minor;marching(E,N,lv,(a,b,cc,d)=>{P.moveTo(a+.5,b+.5);P.lineTo(cc+.5,d+.5)})}
+ T.contours={minor,major};
+}
+
+// ---------- OpenStreetMap mode ----------
+const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+const ROADS=/^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$/;
+const TRAILS=/^(footway|path|track|bridleway|cycleway|steps|pedestrian)$/;
+const STREAMS=/^(stream|river|canal|ditch|drain|brook)$/;
+function buildOSM(T,v){
+ const N=T.N;T.roadMask=new Uint8Array(N*N);T.trailMask=new Uint8Array(N*N);T.bldMask=new Uint8Array(N*N);T.feat=null;
+ const[latN,lonW]=w2ll(T.x0,T.y0),[latS,lonE]=w2ll(T.x0+v.side,T.y0-v.side);T.bbox=[latS,lonW,latN,lonE];
+ const cosl=Math.cos(S.origin.lat*RAD);
+ // base map tiles
+ const BW=1280,base=document.createElement('canvas');base.width=base.height=BW;const g=base.getContext('2d');g.fillStyle='#F2EFE9';g.fillRect(0,0,BW,BW);T.base=base;
+ const z=clamp(Math.round(Math.log2(156543.034*cosl/(v.side*MI_M/BW))),3,18);
+ const[ax,ay]=ll2px(latN,lonW,z),[bx,by]=ll2px(latS,lonE,z),sx=BW/(bx-ax),sy=BW/(by-ay);
+ let want=0,got=0,bad=0;T.tileMsg='Loading map…';
+ for(let tx=Math.floor(ax/256);tx<=Math.floor((bx-1)/256);tx++)for(let ty=Math.floor(ay/256);ty<=Math.floor((by-1)/256);ty++){
+  want++;const im=new Image();
+  im.onload=()=>{got++;if(S.tcache!==T)return;g.drawImage(im,(tx*256-ax)*sx,(ty*256-ay)*sy,256*sx+.5,256*sy+.5);scheduleDraw();osmStatus(T)};
+  im.onerror=()=>{bad++;if(S.tcache===T){T.tileMsg='Some map tiles did not load. Check your connection.';osmStatus(T)}};
+  im.src=`https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`}
+ T.tiles=()=>bad?T.tileMsg:got<want?'Loading map…':'';
+ loadDEM(T,v,latN,lonW,latS,lonE,cosl);
+ clearTimeout(S.featT);S.featT=setTimeout(()=>{if(S.tcache===T)ensureFeatures(T)},450);
+ osmStatus(T);
+}
+function osmStatus(T){if(S.mode!=='osm'||S.tcache!==T)return;
+ status([T.tiles&&T.tiles(),T.featMsg,T.demMsg].filter(Boolean).join(' · '))}
+function loadDEM(T,v,latN,lonW,latS,lonE,cosl){
+ const N=T.N,c=T.c;const zd=clamp(Math.ceil(Math.log2(156543.034*cosl/(c*MI_M))),1,14);
+ const[ax,ay]=ll2px(latN,lonW,zd),[bx,by]=ll2px(latS,lonE,zd);
+ const tx0=Math.floor(ax/256),ty0=Math.floor(ay/256),tx1=Math.floor(bx/256),ty1=Math.floor(by/256);
+ const MW=(tx1-tx0+1)*256,MH=(ty1-ty0+1)*256;const mc=document.createElement('canvas');mc.width=MW;mc.height=MH;const mg=mc.getContext('2d',{willReadFrequently:true});
+ const jobs=[];T.demMsg='Loading terrain…';
+ for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++)jobs.push(new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';
+  im.onload=()=>{mg.drawImage(im,(tx-tx0)*256,(ty-ty0)*256);res()};im.onerror=rej;
+  im.src=`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zd}/${tx}/${ty}.png`}));
+ Promise.all(jobs).then(()=>{if(S.tcache!==T)return;
+  const D=mg.getImageData(0,0,MW,MH).data;const el=(px,py)=>{px=clamp(px,0,MW-1);py=clamp(py,0,MH-1);const o=(py*MW+px)*4;return(D[o]*256+D[o+1]+D[o+2]/256-32768)*3.28084};
+  const E=new Float32Array(N*N);let mn=1e9,mx=-1e9;
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const[la,lo]=w2ll(T.x0+(i+.5)*c,T.y0-(j+.5)*c);let[px,py]=ll2px(la,lo,zd);px-=tx0*256+.5;py-=ty0*256+.5;
+   const ix=Math.floor(px),iy=Math.floor(py),fx=px-ix,fy=py-iy;
+   const e=el(ix,iy)*(1-fx)*(1-fy)+el(ix+1,iy)*fx*(1-fy)+el(ix,iy+1)*(1-fx)*fy+el(ix+1,iy+1)*fx*fy;
+   E[j*N+i]=e;if(e<mn)mn=e;if(e>mx)mx=e}
+  T.elev=E;T.mn=mn;T.mx=mx;makeContours(T);T.demMsg='';compute()
+ }).catch(()=>{if(S.tcache!==T)return;T.demMsg='Terrain did not load, so slope is not used.';osmStatus(T)})
+}
+function ensureFeatures(T){
+ const F=S.feat,[s,w,n,e]=T.bbox,ok=S.origin.lat+','+S.origin.lon;
+ if(F&&F.ok===ok&&F.bbox[0]<=s&&F.bbox[1]<=w&&F.bbox[2]>=n&&F.bbox[3]>=e){
+  if(F.data)attachFeatures(T,F.data,F);else{F.waiters.push(T);T.featMsg='Loading roads, trails and water…';osmStatus(T)}return}
+ const ph=(n-s)*.3,pw=(e-w)*.3,bb=[s-ph,w-pw,n+ph,e+pw];
+ const spanMi=(bb[2]-bb[0])*111320/MI_M,withB=spanMi<=7;
+ const G={ok,bbox:bb,data:null,waiters:[T],withB};S.feat=G;T.featMsg='Loading roads, trails and water…';osmStatus(T);
+ const box=bb.map(v=>v.toFixed(5)).join(',');
+ const q=`[out:json][timeout:40][bbox:${box}];(way["highway"];way["waterway"];way["natural"="water"];way["landuse"="reservoir"];relation["natural"="water"];)->.a;.a out geom qt;`+(withB?`way["building"];out ids center qt;`:'');
+ (async()=>{let lastErr;for(const url of OVERPASS){try{const r=await fetch(url,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+   if(!r.ok)throw new Error(r.status);return await r.json()}catch(err){lastErr=err}}throw lastErr})()
+ .then(js=>{G.data=parseOSM(js);if(S.feat!==G)return;G.waiters.forEach(t=>{if(S.tcache===t)attachFeatures(t,G.data,G)});G.waiters=[]})
+ .catch(()=>{if(S.feat===G)S.feat=null;G.waiters.forEach(t=>{t.featMsg='Roads and water did not load from OpenStreetMap. Draw them, or tap Center map on LKP to retry.';osmStatus(t)})});
+}
+function parseOSM(js){
+ const out={roads:[],trails:[],streams:[],water:[],bld:[]};
+ const pts=g=>g.map(p=>[p.lat,p.lon]);
+ for(const el of js.elements||[]){const t=el.tags;
+  if(el.type==='way'&&el.center&&!t){out.bld.push([el.center.lat,el.center.lon]);continue}
+  if(!t)continue;
+  if(el.type==='way'&&el.geometry){const g=pts(el.geometry);
+   if(t.highway&&ROADS.test(t.highway))out.roads.push(g);
+   else if(t.highway&&TRAILS.test(t.highway))out.trails.push(g);
+   else if(t.waterway&&STREAMS.test(t.waterway))out.streams.push(g);
+   else if(t.natural==='water'||t.landuse==='reservoir'||t.waterway==='riverbank')out.water.push(g)}
+  else if(el.type==='relation'&&el.members){const ring=[];for(const m of el.members)if(m.role==='outer'&&m.geometry){
+    const g=pts(m.geometry);const first=g[0],last=g[g.length-1];
+    if(first[0]===last[0]&&first[1]===last[1])out.water.push(g);else ring.push(...g)}
+   if(ring.length>2)out.water.push(ring)}}
+ return out;
+}
+function attachFeatures(T,d,G){
+ const W=a=>a.map(([la,lo])=>ll2w(la,lo));
+ rasterLines(d.roads.map(W),T,T.roadMask);rasterLines(d.trails.map(W),T,T.trailMask);rasterLines(d.streams.map(W),T,T.streamMask);
+ const wp=d.water.map(W);rasterPoly(wp,T,T.water);rasterLines(wp,T,T.water);
+ rasterDisc(d.bld.map(([la,lo])=>{const[x,y]=ll2w(la,lo);return[x,y,.012]}),T,T.bldMask);
+ T.feat=d;T.featMsg=G.withB?'':'Buildings not loaded at this map size (too large an area).';
+ osmStatus(T);compute();
+}
+function rasterPoly(polys,T,mask){const{N,c,x0,y0}=T;
+ for(const P of polys){if(P.length<3)continue;let ymn=1e9,ymx=-1e9;for(const p of P){if(p[1]<ymn)ymn=p[1];if(p[1]>ymx)ymx=p[1]}
+  const j0=clamp(Math.floor((y0-ymx)/c),0,N-1),j1=clamp(Math.ceil((y0-ymn)/c),0,N-1);
+  for(let j=j0;j<=j1;j++){const yc=y0-(j+.5)*c,xs=[];
+   for(let k=0,m=P.length-1;k<P.length;m=k++){const a=P[m],b=P[k];if((a[1]>yc)!==(b[1]>yc))xs.push(a[0]+(yc-a[1])/(b[1]-a[1])*(b[0]-a[0]))}
+   xs.sort((a,b)=>a-b);
+   for(let k=0;k+1<xs.length;k+=2){const i0=Math.max(0,Math.ceil((xs[k]-x0)/c-.5)),i1=Math.min(N-1,Math.floor((xs[k+1]-x0)/c-.5));for(let i=i0;i<=i1;i++)mask[j*N+i]=1}}}
+}
+function lkpElev(T){if(!T.elev)return 0;if(S.mode==='sample')return elevAt(S.lkp.x,S.lkp.y);
+ const i=clamp(Math.floor((S.lkp.x-T.x0)/T.c),0,T.N-1),j=clamp(Math.floor((T.y0-S.lkp.y)/T.c),0,T.N-1);return T.elev[j*T.N+i]}
 function marching(F,N,L,cb){
  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){
   const a=F[j*N+i],b=F[j*N+i+1],c=F[(j+1)*N+i+1],d=F[(j+1)*N+i];
@@ -362,7 +481,7 @@ function compute(){
  const P=readInputs();S.r95=P.qa[3];
  const v=view();const T=buildTerrain(v);const{N,c,x0,y0}=T;
  // feature masks
- const road=new Uint8Array(N*N),trail=new Uint8Array(N*N),stream=T.streamMask.slice(),water=T.water.slice(),bld=new Uint8Array(N*N);
+ const road=T.roadMask?T.roadMask.slice():new Uint8Array(N*N),trail=T.trailMask?T.trailMask.slice():new Uint8Array(N*N),stream=T.streamMask.slice(),water=T.water.slice(),bld=T.bldMask?T.bldMask.slice():new Uint8Array(N*N);
  if(S.mode==='sample'){rasterLines(PROC.roads,T,road);rasterLines(PROC.trails,T,trail);rasterDisc(PROC.bld.map(p=>[p[0],p[1],.012]),T,bld)}
  for(const f of S.user){if(f.t==='road')rasterLines([f.pts],T,road);else if(f.t==='trail')rasterLines([f.pts],T,trail);else if(f.t==='stream')rasterLines([f.pts],T,stream);
   else if(f.t==='water')rasterDisc(f.pts,T,water);else if(f.t==='building')rasterDisc(f.pts.map(p=>[p[0],p[1],.012]),T,bld)}
@@ -371,7 +490,7 @@ function compute(){
   Dw=any(water)?chamfer(water,N,c):null,Db=any(bld)?chamfer(bld,N,c):null;
  const w=P.cat.w,Lr=.07;
  const qa=P.qa,cdfR=[0,qa[0],qa[1],qa[2],qa[3],qa[3]*1.8],cdfV=[0,.25,.5,.75,.95,1];
- const E=T.elev;const eL=E?elevAt(S.lkp.x,S.lkp.y):0;const er=E?Math.max(60,T.mx-T.mn):1;const cf=c*5280;
+ const E=T.elev;const eL=lkpElev(T);const er=E?Math.max(60,T.mx-T.mn):1;const cf=c*5280;
  const p=new Float64Array(N*N);let distMass=0,sum=0;
  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i;const x=x0+(i+.5)*c,y=y0-(j+.5)*c;
   const dx=x-S.lkp.x,dy=y-S.lkp.y,r=Math.hypot(dx,dy),re=Math.max(r,c*.7);
@@ -459,6 +578,8 @@ function draw(){
  if(T.iv){ctx.fillText('Contours '+T.iv+' ft',bx,by-7*px)}
  const nx=W-24*px,ny=26*px;ctx.beginPath();ctx.moveTo(nx,ny-14*px);ctx.lineTo(nx+7*px,ny+6*px);ctx.lineTo(nx,ny+2*px);ctx.lineTo(nx-7*px,ny+6*px);ctx.closePath();ctx.fillStyle='#1B241E';ctx.fill();
  ctx.font=`700 ${13*px}px "Barlow Condensed",sans-serif`;ctx.textAlign='center';ctx.fillText('N',nx,ny+20*px);ctx.restore();
+ if(S.mode==='osm'){ctx.save();ctx.font=`500 ${10*px}px "IBM Plex Sans",sans-serif`;const t='© OpenStreetMap contributors';const tw=ctx.measureText(t).width;
+  ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillRect(W-tw-12*px,W-18*px,tw+12*px,18*px);ctx.fillStyle='#1B241E';ctx.textBaseline='middle';ctx.fillText(t,W-tw-6*px,W-9*px);ctx.restore()}
  if(S.mode==='image'&&!S.img){ctx.fillStyle='rgba(27,36,30,.7)';ctx.font=`500 ${15*px}px "IBM Plex Sans",sans-serif`;ctx.textAlign='center';ctx.fillText('Load a map image to begin',W/2,W/2-30*px)}
 }
 const fmt=r=>r<1?r.toFixed(2):r.toFixed(1);
@@ -468,7 +589,7 @@ function report(){
  const R=S.result,P=R.P;const u=P.urg;const lvl=u>=7?['Critical','var(--crit)']:u>=5?['High','var(--crit)']:u>=3?['Elevated','var(--warn)']:['Moderate','var(--ok)'];
  $('urg').querySelector('i').style.background=lvl[1];$('urg').querySelector('span').textContent='Urgency: '+lvl[0];
  const rows=[['Subject',($('name').value||'Unnamed')+', age '+P.age],['Category',P.cat.label],['Medical',P.meds.length?P.meds.map(m=>m.label).join('; '):'None entered'],
-  ['LKP',$('lkpNote').value||'—'],['Time since LKP',P.hours+' h'],['Conditions',P.wx.t+(P.night?', after dark':'')],
+  ['LKP',$('lkpNote').value||'—'],...(S.mode==='osm'?[['LKP coords',w2ll(S.lkp.x,S.lkp.y).map(v=>v.toFixed(5)).join(', ')]]:[]),['Time since LKP',P.hours+' h'],['Conditions',P.wx.t+(P.night?', after dark':'')],
   ['Rings (mi)',P.qa.map(fmt).join(' / ')],['Adjustment','× '+P.scale.toFixed(2)+' of category distances']];
  if(P.head)rows.splice(6,0,['Direction',Math.round(+$('heading').value)+'°']);
  $('summary').innerHTML=rows.map(r=>`<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('');
@@ -478,7 +599,7 @@ function report(){
  if(P.night||P.wx.u>=2)notes.push('Thermal drone flights are most effective now: a cold background makes a warm subject stand out.');
  if(P.hours<1)notes.push('Early in the incident: rings are shrunk to reflect limited travel time. Prioritize hasty search of the LKP area and travel routes.');
  $('notes').innerHTML=notes.map(n=>`<li>${esc(n)}</li>`).join('');
- const mw=$('massWarn');if(R.distMass<.9){mw.hidden=false;mw.textContent=`About ${Math.round((1-R.distMass)*100)}% of the distance model falls outside this map. `+(S.mode==='image'?'Use a wider map image.':'Center the map on the LKP.')}else mw.hidden=true;
+ const mw=$('massWarn');if(R.distMass<.9){mw.hidden=false;mw.textContent=`About ${Math.round((1-R.distMass)*100)}% of the distance model falls outside this map. `+(S.mode==='image'?'Use a wider map image.':'Tap Center map on LKP.')}else mw.hidden=true;
 }
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 $('copy').addEventListener('click',()=>{const R=S.result,P=R.P;
@@ -490,7 +611,7 @@ $('copy').addEventListener('click',()=>{const R=S.result,P=R.P;
 
 // ---------- interaction ----------
 let t0=null;function schedule(){clearTimeout(t0);t0=setTimeout(compute,60)}
-document.querySelectorAll('.rail input,.rail select').forEach(el=>{if(el.id!=='imgFile')el.addEventListener('input',schedule)});
+document.querySelectorAll('.rail input,.rail select').forEach(el=>{if(el.id!=='imgFile'&&el.id!=='goTo')el.addEventListener('input',schedule)});
 catSel.addEventListener('change',()=>{setQ();schedule()});
 $('age').addEventListener('change',()=>{const a=+$('age').value;const c=CATS.find(c=>c.ages&&a>=c.ages[0]&&a<=c.ages[1]);if(c&&catSel.value!==c.id){catSel.value=c.id;setQ();schedule()}});
 $('resetQ').addEventListener('click',()=>{setQ();schedule()});
@@ -510,10 +631,27 @@ const endDraw=()=>{if(!S.drawing)return;if(S.drawing.pts.length>1||S.drawing.t==
 cv.addEventListener('pointerup',endDraw);cv.addEventListener('pointercancel',endDraw);
 $('undo').addEventListener('click',()=>{S.user.pop();compute()});
 $('clearDraw').addEventListener('click',()=>{S.user=[];compute()});
-$('recenter').addEventListener('click',()=>{if(S.mode==='sample'){S.center={...S.lkp};compute()}});
-function setMode(m){S.mode=m;$('modeSample').setAttribute('aria-pressed',m==='sample');$('modeImage').setAttribute('aria-pressed',m==='image');
- $('imgControls').hidden=m!=='image';$('recenter').hidden=m!=='sample';S.user=[];
- if(m==='image')S.lkp={x:0,y:0};else{S.lkp={x:.2,y:yR1(.2)+.045};S.center={...S.lkp}}S.tcache=null;compute()}
+$('recenter').addEventListener('click',()=>{if(S.mode!=='image'){S.center={...S.lkp};if(S.mode==='osm'&&S.feat&&!S.feat.data)S.feat=null;S.tcache=null;compute()}});
+function setMode(m){S.mode=m;$('modeOsm').setAttribute('aria-pressed',m==='osm');$('modeSample').setAttribute('aria-pressed',m==='sample');$('modeImage').setAttribute('aria-pressed',m==='image');
+ $('imgControls').hidden=m!=='image';$('osmControls').hidden=m!=='osm';$('osmAttr').hidden=m!=='osm';$('recenter').hidden=m==='image';S.user=[];
+ if(m!=='osm')status('');
+ if(m==='image'||m==='osm'){S.lkp={x:0,y:0};S.center={x:0,y:0}}else{S.lkp={x:.2,y:yR1(.2)+.045};S.center={...S.lkp}}S.tcache=null;compute()}
+function setOrigin(lat,lon){S.origin={lat,lon};S.feat=null;if(S.mode!=='osm')setMode('osm');else{S.lkp={x:0,y:0};S.center={x:0,y:0};S.user=[];S.tcache=null;compute()}}
+async function goTo(){const q=$('goTo').value.trim();if(!q)return;
+ const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+ if(m){const la=+m[1],lo=+m[2];if(Math.abs(la)<=90&&Math.abs(lo)<=180){setOrigin(la,lo);return}}
+ status('Searching…');
+ try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));const js=await r.json();
+  if(!js.length){status('No match for that address. Try adding the city and state, or enter coordinates.');return}
+  $('lkpNote').value=q;setOrigin(+js[0].lat,+js[0].lon)}
+ catch(e){status('Address search did not respond. Enter coordinates instead.')}}
+$('goBtn').addEventListener('click',goTo);
+$('goTo').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();goTo()}});
+$('myLoc').addEventListener('click',()=>{if(!navigator.geolocation){status('Location is not available in this browser.');return}
+ status('Finding your location…');
+ navigator.geolocation.getCurrentPosition(p=>{$('lkpNote').value='My location';setOrigin(p.coords.latitude,p.coords.longitude)},
+  ()=>status('Could not get your location. Check location permission for this site.'),{enableHighAccuracy:true,timeout:15000})});
+$('modeOsm').addEventListener('click',()=>setMode('osm'));
 $('modeSample').addEventListener('click',()=>setMode('sample'));
 $('modeImage').addEventListener('click',()=>setMode('image'));
 $('imgFile').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{S.img=im;S.tcache=null;S.lkp={x:0,y:0};compute()};im.src=r.result};r.readAsDataURL(f)});
