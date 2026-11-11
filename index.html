@@ -1,9 +1,22 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>SAR Probability Mapper</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SAR Probability Mapper v1.5 (2026-11-11)</title>
+<!--
+  SAR Probability Mapper — version history
+  v1.5  2026-11-11  OpenStreetMap default map (works when hosted, e.g. GitHub Pages), OpenTopoMap terrain map, terrain shading and contours from elevation; search grid of ring sectors or squares with model POA; ATAK data package of editable, renamable shapes
+  v1.4  2026-10-29  Drone search blocks ranked by probability x camera detection (RGB, thermal or both), tree canopy data, USGS Imagery + Topo default basemap
+  v1.3  2026-10-29  OpenStreetMap basemap (blocked by OSM) replaced with Esri Streets and Esri Topo; app version shown in title and header
+  v1.2  2026-10-29  Exports numbered (v01, v02…) with date and time in file names and on the one-pager
+  v1.1  2026-10-29  One-page briefing: print, JPEG, PDF, share
+  v1.0  2026-10-28  Live map: USGS and OpenStreetMap features, USGS elevation, KML and GeoJSON export
+-->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: field-kit console. Inputs rail on the left, the map is the hero, results read like an ICS worksheet below it. */
+/* Layout: command-post console. Inputs and results in a left rail with tabs; the live map fills the rest. On phones the map sits on top. */
 :root{
   --bg:#EDF0EB; --panel:#FAFBF8; --ink:#1B241E; --muted:#5C6A60; --line:#CED6CC;
   --accent:#D9531E; --accent-ink:#FFFFFF; --accent-soft:#F8E1D5;
@@ -11,216 +24,302 @@
   --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
   --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+@media (prefers-color-scheme: dark){:root{
   --bg:#111613; --panel:#19201B; --ink:#E4EAE3; --muted:#9AA79D; --line:#2D3830;
   --accent:#F06A33; --accent-ink:#140B06; --accent-soft:#3A2116;
   --ok:#5DBB7E; --warn:#E0A84A; --crit:#F0656B; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#111613; --panel:#19201B; --ink:#E4EAE3; --muted:#9AA79D; --line:#2D3830;
-  --accent:#F06A33; --accent-ink:#140B06; --accent-soft:#3A2116;
-  --ok:#5DBB7E; --warn:#E0A84A; --crit:#F0656B; color-scheme:dark}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.45;
-  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px}
-h1,h2,h3{font-family:var(--display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0}
-header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
-header.top h1{font-size:30px;text-transform:uppercase}
-header.top h1 span{color:var(--accent)}
-header.top p{margin:0;color:var(--muted);max-width:70ch}
-.app{display:grid;grid-template-columns:330px minmax(0,1fr);gap:16px;align-items:start}
-@media (max-width:900px){.app{grid-template-columns:minmax(0,1fr)}}
-.rail{display:flex;flex-direction:column;gap:12px}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--body);display:flex;flex-direction:column}
+h1,h2{font-family:var(--display);font-weight:700;margin:0;letter-spacing:.02em}
+header{display:flex;align-items:center;gap:14px;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:24px;text-transform:uppercase}
+header h1 span{color:var(--accent)}
+.appver{font:500 12px var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:2px 6px;white-space:nowrap}
+#status{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;margin-left:auto}
+#status.err{color:var(--crit)}
+.spin{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;display:none}
+#status.busy .spin{display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+.app{flex:1;min-height:0;display:grid;grid-template-columns:360px minmax(0,1fr);grid-template-areas:"rail map"}
+.rail{grid-area:rail;overflow:auto;border-right:1px solid var(--line);display:flex;flex-direction:column}
+#map{grid-area:map;min-height:300px;background:#dfe5dc}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-areas:"map" "rail";grid-template-rows:62vh auto;overflow:auto}
+  .rail{overflow:visible;border-right:0}
+}
+.tabs{display:flex;position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:0;background:transparent;color:var(--muted);font:700 15px var(--display);text-transform:uppercase;letter-spacing:.08em;padding:11px 8px;cursor:pointer;border-bottom:3px solid transparent}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px max(16px,env(safe-area-inset-left,0px)) 24px 16px;display:flex;flex-direction:column;gap:12px}
 fieldset{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:12px 14px 14px;margin:0;min-width:0;display:flex;flex-direction:column;gap:10px}
-legend{font-family:var(--display);font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.08em;padding:0 6px;color:var(--accent)}
+legend{font:700 15px var(--display);text-transform:uppercase;letter-spacing:.08em;padding:0 6px;color:var(--accent)}
 label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 input[type=text],input[type=number],select{font:inherit;font-size:14px;text-transform:none;letter-spacing:0;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:7px 8px;width:100%}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rowb{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
 .checks{display:flex;flex-direction:column;gap:6px}
 .checks label,.inline{flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--ink);font-weight:400}
-input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;height:16px;margin:0}
+input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;margin:0}
 .hint{font-size:12px;color:var(--muted);margin:0}
-.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
-.seg button{flex:1;border:0;border-right:1px solid var(--line);background:var(--bg);color:var(--ink);font:500 13px var(--body);padding:7px 6px;cursor:pointer}
-.seg button:last-child{border-right:0}
-.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.btn{border:1px solid var(--line);background:var(--bg);color:var(--ink);font:500 13px var(--body);padding:8px 10px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn:hover{border-color:var(--muted)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;font-size:14px;padding:10px}
+.btn[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.btn.hdr{font:700 14px var(--display);text-transform:uppercase;letter-spacing:.08em;padding:7px 12px;border-color:var(--accent);color:var(--accent);background:transparent}
 .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.tools button,.btn{border:1px solid var(--line);background:var(--bg);color:var(--ink);font:500 13px var(--body);padding:7px 6px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
-.tools button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent)}
-.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.btn:hover,.tools button:hover{border-color:var(--muted)}
-.sw{width:12px;height:12px;border-radius:2px;display:inline-block;flex:none}
-details summary{cursor:pointer;font-family:var(--display);font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-size:15px}
-.main{display:flex;flex-direction:column;gap:14px;min-width:0}
-.mapwrap{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px}
-.mapbar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
-.layers{display:flex;flex-wrap:wrap;gap:6px 14px}
-.layers label{flex-direction:row;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)}
-.canvasbox{position:relative;width:100%;max-width:820px;aspect-ratio:1;margin:0 auto;max-height:82vh}
-canvas#map{width:100%;height:100%;display:block;border-radius:4px;touch-action:none;cursor:crosshair}
-.toolhint{font-size:12.5px;color:var(--muted)}
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted)}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.coord{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px;display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
+.coord span:nth-child(odd){color:var(--muted);font-family:var(--body);font-size:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
-.card h2{font-size:18px;text-transform:uppercase;letter-spacing:.06em}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px}
-.kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums}
-.urg{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.card h2{font-size:17px;text-transform:uppercase;letter-spacing:.06em}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13.5px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}
+.urg{display:inline-flex;align-items:center;gap:8px;font:700 22px var(--display);text-transform:uppercase;letter-spacing:.04em}
 .urg i{width:12px;height:12px;border-radius:50%;display:inline-block}
 table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
 th{text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);padding:4px 6px}
 td{padding:5px 6px;border-bottom:1px solid var(--line)}
-td.num{font-family:var(--mono);text-align:right}
-th.num{text-align:right}
+.num{font-family:var(--mono);text-align:right}
+th.num{font-family:var(--body)}
+tr.segrow{cursor:pointer} tr.segrow:hover td{background:var(--accent-soft)}
 .bar{height:6px;background:var(--accent);border-radius:3px;min-width:2px}
-ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;max-width:70ch}
-.warnline{font-size:12.5px;color:var(--warn)}
-.foot{font-size:12px;color:var(--muted);max-width:90ch;margin-top:6px}
+ul.notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:2px;display:inline-block;flex:none}
+.warn{color:var(--warn);font-size:12.5px;margin:0}
 .qgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.gridlab{font:600 11px var(--mono);color:#1B241E;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;white-space:nowrap;pointer-events:none}
+.gridlab span{position:absolute;transform:translate(-50%,-50%)}
+.checkgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.dronelab{font:700 12px var(--mono);color:#fff;background:#00799F;padding:1px 5px;border-radius:3px;white-space:nowrap;pointer-events:none;box-shadow:0 0 0 1.5px #fff}
+tr.dronerow{cursor:pointer} tr.dronerow:hover td{background:var(--accent-soft)}
+.dronebar{height:6px;background:#0093C4;border-radius:3px;min-width:2px}
+details summary{cursor:pointer;font:700 15px var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.seglab{font:600 11px var(--mono);color:#1B241E;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;white-space:nowrap;pointer-events:none}
+.lkplab{font:700 14px var(--display);color:#1B241E;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 4px #fff;white-space:nowrap;pointer-events:none}
+.leaflet-container{font-family:var(--body)}
+.leaflet-container.picking{cursor:crosshair}
+/* one-page briefing */
+.modal{position:fixed;inset:0;z-index:2000;background:rgba(10,14,12,.62);display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.modalbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(1100px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:14px 16px 16px}
+.modalhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.modalhead h2{font-size:20px;text-transform:uppercase;letter-spacing:.06em}
+.sheetprev{background:var(--bg);border:1px solid var(--line);border-radius:4px;aspect-ratio:22/17;max-width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.sheetprev img{width:100%;height:100%;object-fit:contain;display:block}
+.sheetacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+#printSheet{display:none}
+@media print{
+  @page{size:letter landscape;margin:.25in}
+  html,body{height:auto;background:#fff;display:block}
+  body>*{display:none!important}
+  body>#printSheet{display:block!important}
+  #printSheet img{display:block;max-width:100%;max-height:7.9in;margin:0 auto}
+}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
 </style>
-
-<header class="top">
+</head>
+<body>
+<header>
   <h1>SAR <span>Probability</span> Mapper</h1>
-  <p>Prototype. Search an address or coordinates, or tap the map to place the last known point. Roads, trails, water and terrain load from OpenStreetMap automatically.</p>
+  <span class="appver" title="App version and release date">v1.5 · Nov 11, 2026</span>
+  <div id="status"><span class="spin"></span><span id="statusText">Starting</span></div>
+  <button class="btn hdr" id="sheetHdr">One-pager</button>
 </header>
-
 <div class="app">
+  <div id="map"></div>
   <div class="rail">
-    <fieldset>
-      <legend>Subject</legend>
-      <div class="row">
-        <label for="name">Name / ID<input id="name" type="text" value="Sample subject"></label>
-        <label for="age">Age<input id="age" type="number" min="0" max="110" value="78"></label>
-      </div>
-      <label for="cat">Lost person category<select id="cat"></select></label>
-      <div>
-        <p class="hint" style="margin-bottom:6px">Medical history</p>
-        <div class="checks" id="medList"></div>
-      </div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Incident</legend>
-      <label for="lkpNote">LKP description or coordinates<input id="lkpNote" type="text" value="Sample LKP, Umstead State Park"></label>
-      <div class="row">
-        <label for="hours">Hours since LKP<input id="hours" type="number" min="0" step="0.5" value="4"></label>
-        <label for="weather">Weather<select id="weather">
-          <option value="mild">Mild</option><option value="hot">Hot</option><option value="cold">Cold</option>
-          <option value="wetcold" selected>Wet and cold</option><option value="storm">Storm</option></select></label>
-      </div>
-      <label class="inline" for="night"><input id="night" type="checkbox" checked> Darkness has fallen since LKP</label>
-      <label class="inline" for="useHead"><input id="useHead" type="checkbox"> Known direction of travel</label>
-      <div class="row">
-        <label for="heading">Bearing (°)<input id="heading" type="number" min="0" max="359" value="90"></label>
-        <label for="headConf">Confidence<select id="headConf"><option value="0.7">Low</option><option value="1.6" selected>Medium</option><option value="3">High</option></select></label>
-      </div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Map</legend>
-      <div class="seg" role="group" aria-label="Map source">
-        <button id="modeOsm" aria-pressed="true">OpenStreetMap</button>
-        <button id="modeSample" aria-pressed="false">Sample terrain</button>
-        <button id="modeImage" aria-pressed="false">My map image</button>
-      </div>
-      <div id="osmControls">
-        <label for="goTo">Go to address or coordinates<input id="goTo" type="text" placeholder="123 Main St, Apex NC  or  35.87, -78.75" autocomplete="off"></label>
-        <div class="row" style="margin-top:8px">
-          <button class="btn primary" id="goBtn">Go</button>
-          <button class="btn" id="myLoc">My location</button>
-        </div>
-        <p class="hint" style="margin-top:6px">Roads, trails, streams, water and buildings load from OpenStreetMap. Draw anything the map is missing, like logging roads or game trails.</p>
-      </div>
-      <div id="imgControls" hidden>
-        <label for="imgFile">Topo or aerial screenshot<input id="imgFile" type="file" accept="image/*"></label>
-        <label for="imgW" style="margin-top:8px">Map width (miles, left edge to right edge)<input id="imgW" type="number" min="0.1" step="0.1" value="3"></label>
-        <p class="hint" style="margin-top:6px">Screenshots from CalTopo, Google Earth or USGS work. North must be up. Trace the roads, trails, streams, water and buildings so the model can use them.</p>
-      </div>
-      <p class="hint">Tap the map with a tool selected.</p>
-      <div class="tools" id="tools">
-        <button data-tool="lkp" aria-pressed="true"><span class="sw" style="background:#D9531E;border-radius:50%"></span>LKP</button>
-        <button data-tool="road" aria-pressed="false"><span class="sw" style="background:#C23B22"></span>Road</button>
-        <button data-tool="trail" aria-pressed="false"><span class="sw" style="background:#5B3A1E"></span>Trail</button>
-        <button data-tool="stream" aria-pressed="false"><span class="sw" style="background:#2F7FC1"></span>Stream</button>
-        <button data-tool="water" aria-pressed="false"><span class="sw" style="background:#8FC3E6"></span>Water</button>
-        <button data-tool="building" aria-pressed="false"><span class="sw" style="background:#222"></span>Building</button>
-      </div>
-      <div class="row">
-        <button class="btn" id="undo">Undo drawing</button>
-        <button class="btn" id="clearDraw">Clear drawings</button>
-      </div>
-      <button class="btn" id="recenter">Center map on LKP</button>
-    </fieldset>
-
-    <details class="card" style="gap:8px">
-      <summary>Distance statistics</summary>
-      <p class="hint">Straight-line distance from the LKP where subjects of this category are found, in miles. Values are approximations modeled on published lost person behavior data (ISRID). Check them against your Lost Person Behavior reference and adjust for your terrain.</p>
-      <div class="qgrid">
-        <label for="q25">25%<input id="q25" type="number" step="0.1" min="0.05"></label>
-        <label for="q50">50%<input id="q50" type="number" step="0.1" min="0.05"></label>
-        <label for="q75">75%<input id="q75" type="number" step="0.1" min="0.05"></label>
-        <label for="q95">95%<input id="q95" type="number" step="0.1" min="0.05"></label>
-      </div>
-      <button class="btn" id="resetQ">Reset to category values</button>
-    </details>
-  </div>
-
-  <div class="main">
-    <div class="mapwrap">
-      <div class="mapbar">
-        <div class="layers">
-          <label for="lHeat"><input id="lHeat" type="checkbox" checked>Probability</label>
-          <label for="lRings"><input id="lRings" type="checkbox" checked>Distance rings</label>
-          <label for="lSeg"><input id="lSeg" type="checkbox" checked>Segments</label>
-          <label for="lCont"><input id="lCont" type="checkbox" checked>Contours</label>
-        </div>
-        <span class="toolhint" id="toolHint">Tool: place last known point</span>
-      </div>
-      <div class="canvasbox"><canvas id="map" aria-label="Probability map"></canvas></div>
-      <div class="legend">
-        <span><i class="sw" style="background:#B3122E"></i>Top 25% of probability</span>
-        <span><i class="sw" style="background:#E8501C"></i>25–50%</span>
-        <span><i class="sw" style="background:#F49B2B"></i>50–75%</span>
-        <span><i class="sw" style="background:#F8D45C"></i>75–95%</span>
-        <span><i class="sw" style="border:1.5px dashed #1B241E;background:transparent"></i>Distance rings</span>
-      </div>
-      <p class="warnline" id="massWarn" hidden></p>
-      <p class="hint" id="mapStatus" aria-live="polite"></p>
-      <p class="hint" id="osmAttr">Map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Elevation from Terrain Tiles on AWS (USGS 3DEP, SRTM).</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabSetup" aria-selected="true">Setup</button>
+      <button role="tab" id="tabResults" aria-selected="false">Results</button>
     </div>
 
-    <div class="results">
+    <div class="pane" id="paneSetup">
+      <fieldset>
+        <legend>Last known point</legend>
+        <div class="rowb">
+          <label for="addr">Address or place<input id="addr" type="text" placeholder="e.g. 2100 N Harrison Ave, Cary NC"></label>
+          <button class="btn" id="addrGo">Find</button>
+        </div>
+        <div class="rowb">
+          <label for="ll">Latitude, longitude<input id="ll" type="text" placeholder="35.8580, -78.7590"></label>
+          <button class="btn" id="llGo">Set</button>
+        </div>
+        <button class="btn" id="pickBtn" aria-pressed="false">Click the map to set LKP</button>
+        <div class="coord" id="lkpCoord"></div>
+        <p class="hint">You can also drag the orange LKP marker.</p>
+        <label for="lkpNote">LKP description<input id="lkpNote" type="text" value="Trailhead parking, last seen starting hike"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Subject</legend>
+        <div class="row">
+          <label for="name">Name / ID<input id="name" type="text" value="Sample subject"></label>
+          <label for="age">Age<input id="age" type="number" min="0" max="110" value="62"></label>
+        </div>
+        <label for="cat">Lost person category<select id="cat"></select></label>
+        <div><p class="hint" style="margin-bottom:6px">Medical history</p><div class="checks" id="medList"></div></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Conditions</legend>
+        <div class="row">
+          <label for="hours">Hours since LKP<input id="hours" type="number" min="0" step="0.5" value="5"></label>
+          <label for="weather">Weather<select id="weather">
+            <option value="mild">Mild</option><option value="hot">Hot</option><option value="cold" selected>Cold</option>
+            <option value="wetcold">Wet and cold</option><option value="storm">Storm</option></select></label>
+        </div>
+        <label class="inline" for="night"><input id="night" type="checkbox" checked> Darkness has fallen since LKP</label>
+        <label class="inline" for="useHead"><input id="useHead" type="checkbox"> Known direction of travel</label>
+        <div class="row">
+          <label for="heading">Bearing (° true)<input id="heading" type="number" min="0" max="359" value="90"></label>
+          <label for="headConf">Confidence<select id="headConf"><option value="0.7">Low</option><option value="1.6" selected>Medium</option><option value="3">High</option></select></label>
+        </div>
+        <label class="inline" for="useDem"><input id="useDem" type="checkbox" checked> Add drainages found in elevation data</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Drone</legend>
+        <label for="sensor">Camera<select id="sensor"><option value="both" selected>Thermal and RGB (e.g. M30T)</option><option value="thermal">Thermal only</option><option value="rgb">RGB (visible) only</option></select></label>
+        <div class="row">
+          <label for="light">Flying in<select id="light"><option value="day">Daylight</option><option value="night">Darkness</option></select></label>
+          <label for="leaves">Leaves<select id="leaves"><option value="on">On the trees</option><option value="off">Off (winter)</option></select></label>
+        </div>
+        <div class="row3">
+          <label for="blockAc">Block acres<input id="blockAc" type="number" min="10" max="640" step="10" value="100"></label>
+          <label for="blockN">Blocks<input id="blockN" type="number" min="1" max="15" value="6"></label>
+          <label for="acPerFlt">Acres / battery<input id="acPerFlt" type="number" min="5" max="1000" step="5" value="80"></label>
+        </div>
+        <p class="hint">Drone blocks rank ground by the chance the subject is there times the chance your camera can see them there, using tree canopy, open ground, water and buildings.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Search grid</legend>
+        <label for="gridType">Grid shape<select id="gridType"><option value="sectors" selected>Rings and pie sectors</option><option value="squares">Squares (8 × 8)</option></select></label>
+        <div id="sectorOpts" class="checks" style="gap:10px">
+          <label for="ringSrc">Rings<select id="ringSrc"><option value="prob" selected>Probability rings (25 / 50 / 75 / 95%)</option><option value="custom">Custom distances</option></select></label>
+          <label for="ringsCustom" id="ringsCustomWrap" hidden>Ring distances, meters<input id="ringsCustom" type="text" value="100, 300, 500" inputmode="decimal"></label>
+          <div class="row">
+            <label for="nsec">Sectors<select id="nsec"><option>4</option><option selected>8</option><option>12</option><option>16</option></select></label>
+            <label for="rot">Rotate (°)<input id="rot" type="number" min="0" max="359" value="0"></label>
+          </div>
+          <label class="inline" for="splitA"><input id="splitA" type="checkbox"> Split the inner circle into sectors</label>
+        </div>
+        <p class="hint" id="gridHint">Each grid segment gets its share of the probability map (POA). Segments export to ATAK as shapes you can rename for search teams.</p>
+      </fieldset>
+
+      <button class="btn primary" id="runBtn">Run analysis</button>
+
+      <fieldset>
+        <legend>Add missing features</legend>
+        <p class="hint">OpenStreetMap can miss rural trails and small creeks. Pick a tool, click points on the map, then press Finish.</p>
+        <div class="tools" id="tools">
+          <button class="btn" data-tool="road" aria-pressed="false">Road</button>
+          <button class="btn" data-tool="trail" aria-pressed="false">Trail</button>
+          <button class="btn" data-tool="stream" aria-pressed="false">Stream</button>
+          <button class="btn" data-tool="water" aria-pressed="false">Water area</button>
+          <button class="btn" data-tool="building" aria-pressed="false">Building</button>
+          <button class="btn" id="finishBtn">Finish</button>
+        </div>
+        <div class="row"><button class="btn" id="undoBtn">Undo</button><button class="btn" id="clearBtn">Clear added</button></div>
+      </fieldset>
+
+      <details class="card">
+        <summary>Distance statistics</summary>
+        <p class="hint">Straight-line distance from the LKP where subjects of this category are found, in miles. Values are approximations modeled on published lost person behavior data (ISRID). Check them against your Lost Person Behavior reference and adjust for local terrain.</p>
+        <div class="qgrid">
+          <label for="q25">25%<input id="q25" type="number" step="0.1" min="0.05"></label>
+          <label for="q50">50%<input id="q50" type="number" step="0.1" min="0.05"></label>
+          <label for="q75">75%<input id="q75" type="number" step="0.1" min="0.05"></label>
+          <label for="q95">95%<input id="q95" type="number" step="0.1" min="0.05"></label>
+        </div>
+        <button class="btn" id="resetQ">Reset to category values</button>
+      </details>
+    </div>
+
+    <div class="pane" id="paneResults" hidden>
       <section class="card">
         <h2>Incident summary</h2>
-        <div class="urg" id="urg"><i></i><span></span></div>
+        <div class="urg" id="urg"><i></i><span>Run an analysis</span></div>
         <dl class="kv" id="summary"></dl>
-        <button class="btn primary" id="copy">Copy summary</button>
-        <span class="hint" id="copyMsg" aria-live="polite"></span>
+        <div class="legend">
+          <span><i class="sw" style="background:#B3122E"></i>Top 25%</span><span><i class="sw" style="background:#E8501C"></i>25–50%</span>
+          <span><i class="sw" style="background:#F49B2B"></i>50–75%</span><span><i class="sw" style="background:#F8D45C"></i>75–95%</span>
+        </div>
+        <p class="warn" id="dataWarn" hidden></p>
       </section>
       <section class="card">
-        <h2>Segment priority</h2>
-        <p class="hint">Probability of area (POA) for each map segment. Assign highest probability density first.</p>
-        <div style="overflow-x:auto"><table><thead><tr><th>Seg</th><th class="num">POA</th><th class="num">mi²</th><th class="num">POA/mi²</th><th style="width:30%"></th></tr></thead><tbody id="segBody"></tbody></table></div>
+        <h2>Search grid priority</h2>
+        <p class="hint" id="gridSum">Probability of area for each segment. Tap a row to zoom to it.</p>
+        <div style="overflow-x:auto"><table><thead><tr><th>Seg</th><th class="num">POA</th><th class="num">Acres</th><th class="num">POA/100 ac</th><th style="width:28%"></th></tr></thead><tbody id="segBody"></tbody></table></div>
+      </section>
+      <section class="card">
+        <h2>Drone search areas</h2>
+        <p class="hint" id="droneSum"></p>
+        <div style="overflow-x:auto"><table><thead><tr><th>Block</th><th class="num">POA</th><th class="num">POD</th><th class="num">Acres</th><th class="num">Canopy</th><th class="num">Flights</th><th style="width:18%"></th></tr></thead><tbody id="droneBody"></tbody></table></div>
+        <p class="hint" id="groundHint"></p>
+      </section>
+      <section class="card">
+        <h2>Export</h2>
+        <button class="btn primary" id="atakBtn">ATAK data package (.zip)</button>
+        <div class="checkgrid">
+          <label class="inline" for="incGrid"><input id="incGrid" type="checkbox" checked> Search grid</label>
+          <label class="inline" for="incDrone"><input id="incDrone" type="checkbox" checked> Drone blocks</label>
+          <label class="inline" for="incBands"><input id="incBands" type="checkbox" checked> Probability areas</label>
+          <label class="inline" for="incRings"><input id="incRings" type="checkbox" checked> Distance rings</label>
+        </div>
+        <p class="hint">In ATAK: Import Manager, Local SD, pick the .zip (or send it to the team as a data package). Each grid segment and drone block arrives as its own ATAK shape. Tap one, open its details and rename it to a search team, change its color or add remarks. The LKP is always included.</p>
+        <span class="hint" id="atakMsg" aria-live="polite"></span>
+        <button class="btn" id="sheetBtn">One-page briefing: print, JPEG, PDF</button>
+        <p class="hint">Map plus summary on one landscape letter page for responders. It uses the basemap and layers currently shown on the map.</p>
+        <p class="hint">KML opens in Google Earth, CalTopo and DJI Pilot 2 (segments import as polygons for mapping missions). GeoJSON works in CalTopo and most GIS tools.</p>
+        <div class="row"><button class="btn" id="kmlBtn">Download KML</button><button class="btn" id="gjBtn">Download GeoJSON</button></div>
+        <button class="btn" id="copyBtn">Copy text summary</button>
+        <div class="rowb"><p class="hint" id="verHint" aria-live="polite"></p><button class="btn" id="verReset">Restart numbering</button></div>
+        <span class="hint" id="copyMsg" aria-live="polite"></span>
       </section>
       <section class="card">
         <h2>Behavior and search notes</h2>
         <ul class="notes" id="notes"></ul>
       </section>
+      <p class="hint">Planning aid for experienced search managers. It does not replace a full search plan, consensus weighting or local knowledge.</p>
     </div>
-    <p class="foot">How it works: probability starts from the category's distance statistics, then each cell is weighted by distance to roads, trails, drainages, water and buildings, by slope and elevation change, by direction of travel, and by medical, weather and time factors. This is a planning aid for experienced search managers, not a replacement for a full search plan or consensus (Mattson) weighting.</p>
   </div>
 </div>
 
+<div class="modal" id="sheetModal" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="modalbox">
+    <div class="modalhead"><h2 id="sheetTitle">One-page briefing</h2><button class="btn" id="sheetClose">Close</button></div>
+    <div class="sheetprev"><img id="sheetImg" alt="Preview of the one-page briefing: probability map with subject summary and segment priority" hidden></div>
+    <p class="hint" id="sheetMsg" aria-live="polite"></p>
+    <div class="sheetacts">
+      <button class="btn primary" id="sheetPrint">Print</button>
+      <button class="btn" id="sheetJpg">Save JPEG</button>
+      <button class="btn" id="sheetPdf">Save PDF</button>
+      <button class="btn" id="sheetShare" hidden>Share image</button>
+      <button class="btn" id="sheetRebuild">Rebuild</button>
+    </div>
+  </div>
+</div>
+<div id="printSheet"><img id="printImg" alt=""></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (function(){
+"use strict";
 const $=id=>document.getElementById(id);
+// ================= reference data =================
 const CATS=[
  {id:'child1_3',label:'Child, 1–3',ages:[0,3],q:[0.1,0.2,0.5,1.2],w:{trail:.4,road:.3,stream:.6,water:1.6,waterIn:.5,structure:1.4,down:.4,up:0,slope:1.6},notes:['Little sense of direction. Travel is short and random.','Often found sheltered or asleep in brush, vehicles, sheds or crawl spaces. Clear structures and dense cover near the LKP first.','Water near the LKP is the top hazard. Check ponds, pools and streams early.','May not answer calls and may hide from searchers.']},
  {id:'child4_6',label:'Child, 4–6',ages:[4,6],q:[0.1,0.3,0.7,1.8],w:{trail:.8,road:.6,stream:.5,water:1.2,waterIn:.35,structure:1.4,down:.3,up:0,slope:1.3},notes:['Follows trails and other easy routes for short distances, then shelters.','Drawn to animals, play areas and interesting features.','Often hides when scared. Have a family member call if possible.','Check water near the LKP early.']},
- {id:'child7_9',label:'Child, 7–9',ages:[7,9],q:[0.2,0.5,1.0,2.6],w:{trail:1.4,road:1.0,stream:.6,water:.8,waterIn:.2,structure:1.2,down:.3,up:.1,slope:1},notes:['Uses trails and roads, tries shortcuts and gets turned around.','Often trying to return home or to a familiar place.','May hide for fear of getting in trouble.']},
+ {id:'child7_9',label:'Child, 7–9',ages:[7,9],q:[0.2,0.5,1.0,2.6],w:{trail:1.4,road:1,stream:.6,water:.8,waterIn:.2,structure:1.2,down:.3,up:.1,slope:1},notes:['Uses trails and roads, tries shortcuts and gets turned around.','Often trying to return home or to a familiar place.','May hide for fear of getting in trouble.']},
  {id:'child10_12',label:'Child, 10–12',ages:[10,12],q:[0.3,0.8,1.6,3.8],w:{trail:1.6,road:1.4,stream:.6,water:.8,waterIn:.15,structure:1,down:.3,up:.2,slope:.9},notes:['Travels on trails and roads and can cover real distance.','May be with friends. Check runaway factors, phone and social media.']},
  {id:'child13_15',label:'Youth, 13–15',ages:[13,15],q:[0.5,1.0,2.0,4.5],w:{trail:1.6,road:1.5,stream:.5,water:.8,waterIn:.15,structure:1,down:.3,up:.2,slope:.8},notes:['Travels like an adult hiker but takes more risks.','Runaway or despondent factors are common. Check phone, friends and social media.']},
  {id:'hiker',label:'Hiker',q:[0.7,1.9,3.6,8.0],w:{trail:2.6,road:1.2,stream:1,water:.7,waterIn:.05,structure:.6,down:.8,up:.2,slope:.8},notes:['Most are found on or near a trail, often past a confusing junction.','Once lost, many follow drainages downhill.','Check trail junctions, decision points and the planned destination.']},
@@ -244,199 +343,291 @@ const MED=[
  {id:'alcohol',label:'Alcohol or drug impaired',dist:.7,water:1.4,urg:1,note:'Impaired: higher risk near water and roads. May be asleep in cover.'}
 ];
 const WX={mild:{d:1,u:0,t:'Mild'},hot:{d:.85,u:1,t:'Hot'},cold:{d:.85,u:2,t:'Cold'},wetcold:{d:.8,u:3,t:'Wet and cold'},storm:{d:.7,u:3,t:'Storm'}};
+const ROAD_TYPES=/^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|living_street|track|road)(_link)?$/;
+const TRAIL_TYPES=/^(path|footway|bridleway|cycleway|steps|trail|pedestrian)$/;
+const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter'];
+const MI=1609.344;
 
-// populate
+// ================= UI setup =================
 const catSel=$('cat');
 CATS.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.label;catSel.appendChild(o)});
-catSel.value='dementia';
+catSel.value='hiker';
 MED.forEach(m=>{const l=document.createElement('label');l.htmlFor='m_'+m.id;l.innerHTML='<input type="checkbox" id="m_'+m.id+'"> '+m.label;$('medList').appendChild(l)});
-$('m_mobility').checked=true;$('m_hearing').checked=true;
+$('m_diabetes').checked=true;
+{const now=new Date(),hr=now.getHours(),mo=now.getMonth();$('light').value=hr>=7&&hr<18?'day':'night';$('leaves').value=mo>=3&&mo<=9?'on':'off'}
+const APF={both:80,thermal:80,rgb:200};
+$('sensor').addEventListener('change',()=>{$('acPerFlt').value=APF[$('sensor').value]});
 function setQ(){const c=CATS.find(c=>c.id===catSel.value);['q25','q50','q75','q95'].forEach((k,i)=>$(k).value=c.q[i])}
 setQ();
+function tab(which){$('tabSetup').setAttribute('aria-selected',which==='setup');$('tabResults').setAttribute('aria-selected',which==='results');$('paneSetup').hidden=which!=='setup';$('paneResults').hidden=which!=='results'}
+$('tabSetup').onclick=()=>tab('setup');$('tabResults').onclick=()=>tab('results');
+function status(t,kind){$('statusText').textContent=t;$('status').className=kind||''}
 
-// ---------- procedural world ----------
-function hash(ix,iy){let h=Math.imul(ix,374761393)+Math.imul(iy,668265263)+1013904223|0;h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;return (h>>>0)/4294967295}
-function vnoise(x,y){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);
- const a=hash(ix,iy),b=hash(ix+1,iy),c=hash(ix,iy+1),d=hash(ix+1,iy+1);return a+(b-a)*sx+(c-a)*sy+(a-b-c+d)*sx*sy}
-function fbm(x,y,o=5){let s=0,a=1,f=1,n=0;for(let i=0;i<o;i++){s+=a*(vnoise(x*f,y*f)*2-1);n+=a;a*=.5;f*=2.03}return s/n}
-function elevAt(x,y){let e=360+380*fbm(x*.55+11.3,y*.55-7.1);const dx=x-1.4,dy=y+.9;e-=320*Math.exp(-(dx*dx+dy*dy)/.35);return e}
-const WL=110;
-const yR1=x=>.9+.35*Math.sin(x*.7)+.15*Math.sin(x*1.9);
-const xR2=y=>-1.6+.3*Math.sin(y*.9)+.1*Math.sin(y*2.3);
-const PROC=(function(){
- const roads=[[],[],[]];for(let x=-20;x<=20;x+=.08)roads[0].push([x,yR1(x)]);
- for(let y=-20;y<=20;y+=.08)roads[1].push([xR2(y),y]);
- for(let x=-1.75;x<=14;x+=.08)roads[2].push([x,-2.6+.5*Math.sin((x+1.75)*.5)]);
- const trails=[[],[],[],[]];
- for(let y=yR1(.6);y<=1.45;y+=.04)trails[0].push([.6,y]);
- for(let t=0;t<=Math.PI*2+.01;t+=.08)trails[1].push([.9+.55*Math.cos(t+Math.PI*1.2)+.1*Math.sin(3*t),1.95+.5*Math.sin(t+Math.PI*1.2)]);
- for(let x=xR2(-.4);x<=1.05;x+=.05)trails[2].push([x,-.4-.4*Math.sin((x+1.6)*1.1)]);
- for(let s=0;s<=1.0001;s+=.01){const x=2.5+s*5.5,y=yR1(2.5)+s*(-6.5)+.4*Math.sin(s*12);trails[3].push([x,y])}
- const bld=[];
- roads[0].forEach(([x,y],i)=>{if(i%3===0&&Math.abs(x)<9&&hash(i,7)<.32){const s=hash(i,9)<.5?1:-1;bld.push([x,y+s*.05])}});
- roads[1].forEach(([x,y],i)=>{if(i%3===0&&Math.abs(y)<9&&hash(i,17)<.3){const s=hash(i,19)<.5?1:-1;bld.push([x+s*.05,y])}});
- for(let a=0;a<4;a++)for(let b=0;b<3;b++)bld.push([-1.35+a*.075,1.25+b*.07]);
- bld.push([.2,yR1(.2)+.045]);
- return{roads,trails,bld};
-})();
+// ================= map =================
+const map=L.map('map',{zoomControl:true,doubleClickZoom:false}).setView([35.8580,-78.7590],13);
+const tnm=(svc)=>L.tileLayer('https://basemap.nationalmap.gov/arcgis/rest/services/'+svc+'/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:16,attribution:'<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank">USGS The National Map</a>'});
+const bases={
+ 'USGS Topo':tnm('USGSTopo'),
+ 'USGS Imagery':tnm('USGSImageryOnly'),
+ 'USGS Imagery + Topo':tnm('USGSImageryTopo'),
+ 'Esri World Imagery':L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Esri, Maxar, Earthstar Geographics'}),
+ // OpenStreetMap and OpenTopoMap only serve tiles to pages hosted on a website (GitHub Pages works). Opened as a local file, they show 'Access blocked', so the app then starts on USGS imagery.
+ 'OpenStreetMap':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'}),
+ 'OpenTopoMap (terrain)':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:20,maxNativeZoom:17,subdomains:'abc',attribution:'Map: &copy; <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA) · &copy; OpenStreetMap contributors · SRTM'}),
+ 'Esri Streets':L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Esri, HERE, Garmin, USGS, OpenStreetMap contributors'}),
+ 'Esri Topo':L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Esri, HERE, Garmin, USGS, OpenStreetMap contributors'})
+};
+const HOSTED=/^https?:$/.test(location.protocol);
+let baseName='USGS Imagery + Topo';
+if(HOSTED){baseName='OpenStreetMap';try{const b=localStorage.getItem('sar-basemap');if(b&&bases[b])baseName=b}catch(e){}}
+bases[baseName].addTo(map);
+map.on('baselayerchange',e=>{try{localStorage.setItem('sar-basemap',e.name)}catch(er){}
+ if(!HOSTED&&/OpenStreetMap|OpenTopoMap/.test(e.name))status('OpenStreetMap and OpenTopoMap tiles only load when the app is opened from its website (GitHub Pages), not as a local file.','err')});
+const gDrone=L.layerGroup().addTo(map),gPod=L.layerGroup(),gHill=L.layerGroup().addTo(map),gCont=L.layerGroup();
+const gProb=L.layerGroup().addTo(map),gRings=L.layerGroup().addTo(map),gSeg=L.layerGroup().addTo(map),gFeat=L.layerGroup(),gUser=L.layerGroup().addTo(map),gArea=L.layerGroup().addTo(map);
+L.control.layers(bases,{'Terrain shading':gHill,'Contours':gCont,'Probability':gProb,'Distance rings':gRings,'Search grid':gSeg,'Features used by model':gFeat,'Search area boundary':gArea,'Drone search blocks':gDrone,'Drone visibility':gPod},{collapsed:true}).addTo(map);
+L.control.scale({imperial:true,metric:true}).addTo(map);
+map.attributionControl.addAttribution('Streams: USGS NHD · Roads/trails: USGS and OpenStreetMap · Elevation: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">Terrain Tiles</a> (USGS 3DEP and others) · Features &copy; OpenStreetMap contributors');
 
-// ---------- state ----------
-const S={mode:'osm',origin:{lat:35.8676,lon:-78.7516},lkp:{x:0,y:0},center:{x:0,y:0},tool:'lkp',img:null,
- user:[],drawing:null,tcache:null,result:null,feat:null};
+const lkpIcon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8.5" fill="#D9531E" stroke="#fff" stroke-width="3"/><circle cx="11" cy="11" r="2.5" fill="#fff"/></svg>'});
+const S={lkp:L.latLng(35.8580,-78.7590),area:null,loadToken:0,user:[],draft:null,tool:null,picking:false,result:null};
+const lkpMarker=L.marker(S.lkp,{icon:lkpIcon,draggable:true,zIndexOffset:1000}).addTo(map);
+const lkpLabel=L.marker(S.lkp,{icon:L.divIcon({className:'lkplab',html:'LKP',iconSize:[30,16],iconAnchor:[-12,8]}),interactive:false}).addTo(map);
+lkpMarker.on('dragend',()=>setLKP(lkpMarker.getLatLng(),false));
 
-// ---------- geo helpers (local frame: miles east/north of S.origin) ----------
-const MI_M=1609.344,RAD=Math.PI/180;
-function w2ll(x,y){const o=S.origin;return[o.lat+y*MI_M/111320,o.lon+x*MI_M/(111320*Math.cos(o.lat*RAD))]}
-function ll2w(lat,lon){const o=S.origin;return[(lon-o.lon)*111320*Math.cos(o.lat*RAD)/MI_M,(lat-o.lat)*111320/MI_M]}
-function ll2px(lat,lon,z){const n=256*Math.pow(2,z),sn=Math.sin(lat*RAD);return[(lon+180)/360*n,(.5-Math.log((1+sn)/(1-sn))/(4*Math.PI))*n]}
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-function status(t){$('mapStatus').textContent=t||''}
-let rafD=0;function scheduleDraw(){if(!rafD)rafD=requestAnimationFrame(()=>{rafD=0;draw()})}
+// ================= geodesy =================
+function utm(lat,lon){
+ const a=6378137,f=1/298.257223563,e2=f*(2-f),ep2=e2/(1-e2),k0=.9996;
+ let zone=Math.floor((lon+180)/6)+1;
+ const lon0=((zone-1)*6-180+3)*Math.PI/180,phi=lat*Math.PI/180,lam=lon*Math.PI/180;
+ const N=a/Math.sqrt(1-e2*Math.sin(phi)**2),T=Math.tan(phi)**2,C=ep2*Math.cos(phi)**2,A=Math.cos(phi)*(lam-lon0);
+ const M=a*((1-e2/4-3*e2*e2/64-5*e2**3/256)*phi-(3*e2/8+3*e2*e2/32+45*e2**3/1024)*Math.sin(2*phi)+(15*e2*e2/256+45*e2**3/1024)*Math.sin(4*phi)-(35*e2**3/3072)*Math.sin(6*phi));
+ const E=k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120)+500000;
+ let Nn=k0*(M+N*Math.tan(phi)*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*ep2)*A**6/720));
+ if(lat<0)Nn+=10000000;return{zone,E,N:Nn};
+}
+function usng(lat,lon){
+ const u=utm(lat,lon);const band='CDEFGHJKLMNPQRSTUVWXX'[Math.floor((lat+80)/8)];
+ const set=u.zone%6||6;const cols=['ABCDEFGH','JKLMNPQR','STUVWXYZ'][(set-1)%3];
+ const col=cols[Math.floor(u.E/100000)-1];const rows='ABCDEFGHJKLMNPQRSTUV';
+ const row=rows[(Math.floor(u.N/100000)+(u.zone%2===0?5:0))%20];
+ const e=String(Math.floor(u.E%100000)).padStart(5,'0').slice(0,4),n=String(Math.floor(u.N%100000)).padStart(5,'0').slice(0,4);
+ return `${u.zone}${band} ${col}${row} ${e} ${n}`;
+}
+function updateCoord(){const la=S.lkp.lat,lo=S.lkp.lng;
+ $('lkpCoord').innerHTML=`<span>Lat, long</span><span>${la.toFixed(5)}, ${lo.toFixed(5)}</span><span>USNG</span><span>${usng(la,lo)}</span>`;$('ll').value=la.toFixed(5)+', '+lo.toFixed(5)}
 
-function view(){
- if(S.mode==='image'&&S.img){const W=+$('imgW').value||3,H=W*S.img.height/S.img.width;return{cx:0,cy:0,side:Math.max(W,H),N:220,iw:W,ih:H}}
- const r=S.r95||3.5;return{cx:S.center.x,cy:S.center.y,side:Math.max(1.5,2*r*1.18),N:220}
+// ================= LKP input =================
+function setLKP(ll,pan){S.lkp=L.latLng(ll);lkpMarker.setLatLng(S.lkp);lkpLabel.setLatLng(S.lkp);updateCoord();if(pan)map.setView(S.lkp,Math.max(map.getZoom(),14));run(false)}
+$('llGo').onclick=()=>{const t=$('ll').value;const nums=(t.match(/-?\d+(\.\d+)?/g)||[]).map(Number);
+ if(nums.length<2){status('Enter latitude and longitude, like 35.8580, -78.7590','err');return}
+ let[la,lo]=nums;if(/w/i.test(t)&&lo>0)lo=-lo;if(/s/i.test(t.replace(/usng/i,''))&&la>0&&/\bs\b/i.test(t))la=-la;
+ if(Math.abs(la)>90||Math.abs(lo)>180){status('Those coordinates are out of range','err');return}setLKP([la,lo],true)};
+$('addrGo').onclick=async()=>{const q=$('addr').value.trim();if(!q)return;status('Looking up address','busy');
+ try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q='+encodeURIComponent(q));const j=await r.json();
+  if(!j.length){status('No match for that address. Try adding the town and state.','err');return}setLKP([+j[0].lat,+j[0].lon],true)}
+ catch(e){status('Address lookup failed. Check the connection or enter coordinates.','err')}};
+$('addr').addEventListener('keydown',e=>{if(e.key==='Enter')$('addrGo').click()});
+$('ll').addEventListener('keydown',e=>{if(e.key==='Enter')$('llGo').click()});
+$('pickBtn').onclick=()=>{S.picking=!S.picking;setTool(null);$('pickBtn').setAttribute('aria-pressed',S.picking);map.getContainer().classList.toggle('picking',S.picking)};
+
+// ================= user features =================
+const userStyle={road:{color:'#C23B22',weight:4},trail:{color:'#5B3A1E',weight:3,dashArray:'6 5'},stream:{color:'#2F7FC1',weight:3},water:{color:'#2F7FC1',weight:2,fillColor:'#8FC3E6',fillOpacity:.6}};
+function setTool(t){S.tool=t;finishDraft();[...$('tools').querySelectorAll('[data-tool]')].forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===t));
+ map.getContainer().classList.toggle('picking',!!t||S.picking);if(t){S.picking=false;$('pickBtn').setAttribute('aria-pressed',false)}}
+$('tools').addEventListener('click',e=>{const b=e.target.closest('[data-tool]');if(!b)return;setTool(S.tool===b.dataset.tool?null:b.dataset.tool)});
+function drawUser(){gUser.clearLayers();for(const f of S.user.concat(S.draft?[S.draft]:[])){
+ if(f.t==='building')L.circleMarker(f.pts[0],{radius:5,color:'#fff',weight:2,fillColor:'#222',fillOpacity:1}).addTo(gUser);
+ else if(f.t==='water'&&f.pts.length>2)L.polygon(f.pts,userStyle.water).addTo(gUser);
+ else L.polyline(f.pts,userStyle[f.t]).addTo(gUser)}}
+function finishDraft(){if(S.draft){const ok=S.draft.t==='water'?S.draft.pts.length>2:S.draft.pts.length>1;if(ok){S.user.push(S.draft);S.draft=null;drawUser();compute()}else{S.draft=null;drawUser()}}}
+$('finishBtn').onclick=finishDraft;
+$('undoBtn').onclick=()=>{if(S.draft)S.draft=null;else S.user.pop();drawUser();compute()};
+$('clearBtn').onclick=()=>{S.user=[];S.draft=null;drawUser();compute()};
+map.on('click',e=>{
+ if(S.picking){S.picking=false;$('pickBtn').setAttribute('aria-pressed',false);map.getContainer().classList.remove('picking');setLKP(e.latlng,false);return}
+ if(!S.tool)return;
+ if(S.tool==='building'){S.user.push({t:'building',pts:[[e.latlng.lat,e.latlng.lng]]});drawUser();compute();return}
+ if(!S.draft)S.draft={t:S.tool,pts:[]};S.draft.pts.push([e.latlng.lat,e.latlng.lng]);drawUser()});
+map.on('dblclick',()=>finishDraft());
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('sheetModal').hidden){$('sheetModal').hidden=true;return}S.draft=null;setTool(null);drawUser()}});
+
+// ================= inputs → model params =================
+function readInputs(){
+ const cat=CATS.find(c=>c.id===catSel.value);const age=+$('age').value||0;
+ const meds=MED.filter(m=>$('m_'+m.id).checked);const hours=Math.max(0,+$('hours').value||0);
+ const wx=WX[$('weather').value];const night=$('night').checked;
+ const q=['q25','q50','q75','q95'].map(k=>Math.max(.05,+$(k).value||.1));for(let i=1;i<4;i++)q[i]=Math.max(q[i],q[i-1]+.02);
+ const timeF=Math.min(1,.25+.75*Math.min(1,hours/10));
+ let medD=1,slopeM=1,pathM=1,waterM=1;meds.forEach(m=>{medD*=m.dist||1;slopeM*=m.slope||1;pathM*=m.path||1;waterM*=m.water||1});
+ const scale=timeF*medD*wx.d*(night?.85:1);
+ let urg=0;if(age<7)urg+=2;else if(age>=75)urg+=2;else if(age>=65)urg+=1;
+ meds.forEach(m=>urg+=m.urg);urg+=wx.u+(night?1:0)+(hours>24?2:hours>12?1:0);
+ if(['despondent','autism','child1_3'].includes(cat.id))urg+=1;
+ const drone={sensor:$('sensor').value,light:$('light').value,leaves:$('leaves').value,wx:$('weather').value,
+  blockAc:Math.min(640,Math.max(10,+$('blockAc').value||100)),count:Math.min(15,Math.max(1,Math.round(+$('blockN').value||6))),apf:Math.max(5,+$('acPerFlt').value||80)};
+ const qa=q.map(v=>v*scale);let gridErr='';
+ let rings=qa.slice();
+ if($('ringSrc').value==='custom'){const r=($('ringsCustom').value.match(/\d+(\.\d+)?/g)||[]).map(Number).filter(v=>v>0).sort((a,b)=>a-b);
+  if(r.length&&r.length<=8)rings=[...new Set(r)].map(m=>m/MI);else gridErr='Enter 1 to 8 ring distances in meters, like 100, 300, 500. Using the probability rings for now.'}
+ const grid={type:$('gridType').value,rings,ringSrc:$('ringSrc').value,n:+$('nsec').value||8,rot:((+$('rot').value||0)%360+360)%360,split:$('splitA').checked,err:gridErr};
+ return{cat,age,meds,hours,wx,night,q,qa,scale,urg,slopeM,pathM,waterM,drone,grid,useDem:$('useDem').checked,
+  head:$('useHead').checked?{b:(+$('heading').value||0)*Math.PI/180,k:+$('headConf').value}:null};
 }
 
-// ---------- terrain grid ----------
-function buildTerrain(v){
- const key=[S.mode,S.origin.lat,S.origin.lon,v.cx.toFixed(4),v.cy.toFixed(4),v.side.toFixed(4),v.N].join('|');
- if(S.tcache&&S.tcache.key===key)return S.tcache;
- const N=v.N,c=v.side/N,x0=v.cx-v.side/2,y0=v.cy+v.side/2;
- const T={key,N,c,x0,y0,elev:null,water:new Uint8Array(N*N),streamMask:new Uint8Array(N*N),streamSegs:[],base:null,contours:null};
- if(S.mode==='sample'){
-  const E=new Float32Array(N*N);let mn=1e9,mx=-1e9;
-  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const e=elevAt(x0+(i+.5)*c,y0-(j+.5)*c);E[j*N+i]=e;if(e<mn)mn=e;if(e>mx)mx=e;if(e<WL)T.water[j*N+i]=1}
-  T.elev=E;T.mn=mn;T.mx=mx;
-  // D8 flow accumulation
-  const idx=Array.from({length:N*N},(_,k)=>k).sort((a,b)=>E[b]-E[a]);
-  const acc=new Float32Array(N*N).fill(c*c),down=new Int32Array(N*N).fill(-1);
-  for(const k of idx){const i=k%N,j=(k/N)|0;let best=-1,bd=0;
-   for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){if(!di&&!dj)continue;const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=N||jj>=N)continue;
-    const kk=jj*N+ii,drop=(E[k]-E[kk])/(di&&dj?1.414:1);if(drop>bd){bd=drop;best=kk}}
-   down[k]=best;if(best>=0)acc[best]+=acc[k]}
-  const thr=Math.max(.12,30*c*c);
-  for(let k=0;k<N*N;k++)if(acc[k]>thr&&!T.water[k])T.streamMask[k]=1;
-  for(let k=0;k<N*N;k++)if(T.streamMask[k]&&down[k]>=0)T.streamSegs.push([k%N,(k/N)|0,down[k]%N,(down[k]/N)|0,Math.min(2.4,.8+Math.log10(acc[k]/thr+1)*1.4)]);
-  // base image
-  const cv=document.createElement('canvas');cv.width=cv.height=N;const g=cv.getContext('2d'),im=g.createImageData(N,N);
-  const L=[-.55,.55,.63],cf=c*5280,z=5;
-  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i,p=k*4;
-   if(T.water[k]){im.data[p]=150;im.data[p+1]=196;im.data[p+2]=226;im.data[p+3]=255;continue}
-   const eL=E[j*N+Math.max(0,i-1)],eR=E[j*N+Math.min(N-1,i+1)],eU=E[Math.max(0,j-1)*N+i],eD=E[Math.min(N-1,j+1)*N+i];
-   const gx=(eR-eL)/(2*cf)*z,gy=(eU-eD)/(2*cf)*z;const nl=Math.hypot(gx,gy,1);
-   const sh=Math.max(0,(-gx*L[0]-gy*L[1]+L[2])/nl);
-   const wx=x0+(i+.5)*c,wy=y0-(j+.5)*c;const forest=fbm(wx*1.3+50,wy*1.3-20,4)>-.08;
-   const b=forest?[203,226,192]:[244,245,238];const f=.72+.38*sh;
-   im.data[p]=Math.min(255,b[0]*f);im.data[p+1]=Math.min(255,b[1]*f);im.data[p+2]=Math.min(255,b[2]*f);im.data[p+3]=255}
-  g.putImageData(im,0,0);T.base=cv;
-  makeContours(T);
- }
- S.tcache=T;
- if(S.mode==='osm')buildOSM(T,v);
- return T;
+// ================= data loading =================
+function lon2x(lon,z){return (lon+180)/360*Math.pow(2,z)*256}
+function lat2y(lat,z){const r=lat*Math.PI/180;return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z)*256}
+function loadImg(url){return new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';im.onload=()=>res(im);im.onerror=()=>rej(new Error('tile'));im.src=url})}
+async function fetchElevation(A){
+ const cellm=A.c*MI;let z=Math.round(Math.log2(156543.03*Math.cos(A.lat0*Math.PI/180)/cellm));z=Math.max(8,Math.min(14,z));
+ let tx0,tx1,ty0,ty1;
+ for(;;){tx0=Math.floor(lon2x(A.w,z)/256);tx1=Math.floor(lon2x(A.e,z)/256);ty0=Math.floor(lat2y(A.n,z)/256);ty1=Math.floor(lat2y(A.s,z)/256);
+  if((tx1-tx0+1)*(ty1-ty0+1)<=49||z<=8)break;z--}
+ const tiles={},jobs=[];const cv=document.createElement('canvas');cv.width=cv.height=256;const g=cv.getContext('2d',{willReadFrequently:true});
+ for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++)jobs.push(loadImg(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${tx}/${ty}.png`).then(im=>{g.clearRect(0,0,256,256);g.drawImage(im,0,0);tiles[tx+'/'+ty]=g.getImageData(0,0,256,256).data}));
+ await Promise.all(jobs);
+ const N=A.N,E=new Float32Array(N*N);
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const[la,lo]=A.toLL(-A.half+(i+.5)*A.c,A.half-(j+.5)*A.c);
+  const gx=lon2x(lo,z),gy=lat2y(la,z),tx=Math.floor(gx/256),ty=Math.floor(gy/256),d=tiles[tx+'/'+ty];
+  const px=Math.min(255,Math.floor(gx-tx*256)),py=Math.min(255,Math.floor(gy-ty*256)),o=(py*256+px)*4;
+  E[j*N+i]=d[o]*256+d[o+1]+d[o+2]/256-32768}
+ return{E,z};
 }
-function makeContours(T){
- const{elev:E,N,mn,mx}=T;const range=mx-mn,nice=[5,10,20,25,40,50,100,200];let iv=nice.find(n=>range/n<=22)||200;T.iv=iv;
- const minor=new Path2D(),major=new Path2D();
- for(let lv=Math.ceil(mn/iv)*iv;lv<mx;lv+=iv){const P=(Math.round(lv/iv)%5===0)?major:minor;marching(E,N,lv,(a,b,cc,d)=>{P.moveTo(a+.5,b+.5);P.lineTo(cc+.5,d+.5)})}
- T.contours={minor,major};
+function withTimeout(p,ms,msg){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(msg)),ms))])}
+// Ask the Overpass mirrors one at a time, starting the next if the previous hasn't answered within a few seconds. First good answer wins.
+function overpass(q,signal){
+ const body='data='+encodeURIComponent(q);
+ return new Promise((resolve,reject)=>{
+  const ctrls=[],timers=[],errs=[];let done=false;
+  const finish=()=>{done=true;timers.forEach(clearTimeout);ctrls.forEach(c=>c.abort())};
+  timers.push(setTimeout(()=>{if(!done){finish();reject(new Error('no answer within 50 s'+(errs.length?' ('+errs.join('; ')+')':'')))}},50000));
+  if(signal)signal.addEventListener('abort',()=>{if(!done){finish();reject(new Error('cancelled'))}});
+  OVERPASS.forEach((url,n)=>{timers.push(setTimeout(()=>{if(done)return;const c=new AbortController();ctrls.push(c);const host=new URL(url).host;
+   fetch(url,{method:'POST',body,headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:c.signal})
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+    .then(j=>{if(done)return;if(!j.elements||(j.remark&&/error|timed out/i.test(j.remark)))throw new Error(j.remark?'server timed out':'bad reply');finish();resolve(j)})
+    .catch(e=>{if(done)return;errs.push(host+': '+(e.name==='TypeError'?'blocked or offline':e.message));if(errs.length===OVERPASS.length){finish();reject(new Error(errs.join('; ')))}})},n*6000))});
+ });
 }
-
-// ---------- OpenStreetMap mode ----------
-const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
-const ROADS=/^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$/;
-const TRAILS=/^(footway|path|track|bridleway|cycleway|steps|pedestrian)$/;
-const STREAMS=/^(stream|river|canal|ditch|drain|brook)$/;
-function buildOSM(T,v){
- const N=T.N;T.roadMask=new Uint8Array(N*N);T.trailMask=new Uint8Array(N*N);T.bldMask=new Uint8Array(N*N);T.feat=null;
- const[latN,lonW]=w2ll(T.x0,T.y0),[latS,lonE]=w2ll(T.x0+v.side,T.y0-v.side);T.bbox=[latS,lonW,latN,lonE];
- const cosl=Math.cos(S.origin.lat*RAD);
- // base map tiles
- const BW=1280,base=document.createElement('canvas');base.width=base.height=BW;const g=base.getContext('2d');g.fillStyle='#F2EFE9';g.fillRect(0,0,BW,BW);T.base=base;
- const z=clamp(Math.round(Math.log2(156543.034*cosl/(v.side*MI_M/BW))),3,18);
- const[ax,ay]=ll2px(latN,lonW,z),[bx,by]=ll2px(latS,lonE,z),sx=BW/(bx-ax),sy=BW/(by-ay);
- let want=0,got=0,bad=0;T.tileMsg='Loading map…';
- for(let tx=Math.floor(ax/256);tx<=Math.floor((bx-1)/256);tx++)for(let ty=Math.floor(ay/256);ty<=Math.floor((by-1)/256);ty++){
-  want++;const im=new Image();
-  im.onload=()=>{got++;if(S.tcache!==T)return;g.drawImage(im,(tx*256-ax)*sx,(ty*256-ay)*sy,256*sx+.5,256*sy+.5);scheduleDraw();osmStatus(T)};
-  im.onerror=()=>{bad++;if(S.tcache===T){T.tileMsg='Some map tiles did not load. Check your connection.';osmStatus(T)}};
-  im.src=`https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`}
- T.tiles=()=>bad?T.tileMsg:got<want?'Loading map…':'';
- loadDEM(T,v,latN,lonW,latS,lonE,cosl);
- clearTimeout(S.featT);S.featT=setTimeout(()=>{if(S.tcache===T)ensureFeatures(T)},450);
- osmStatus(T);
+function osmWaysQuery(A){const bb=`${A.s.toFixed(5)},${A.w.toFixed(5)},${A.n.toFixed(5)},${A.e.toFixed(5)}`;
+ const hw='^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|living_street|track|road|path|footway|bridleway|cycleway|steps|trail|pedestrian)(_link)?$';
+ return `[out:json][timeout:45];(way["highway"~"${hw}"](${bb});way["waterway"~"^(river|stream|brook|canal|ditch|drain|creek)$"](${bb});way["natural"="water"](${bb});way["landuse"="reservoir"](${bb}););out geom qt;`}
+function osmWoodsQuery(A){const bb=`${A.s.toFixed(5)},${A.w.toFixed(5)},${A.n.toFixed(5)},${A.e.toFixed(5)}`;
+ return `[out:json][timeout:60];(way["natural"="wood"](${bb});way["landuse"="forest"](${bb});relation["natural"="wood"](${bb});relation["landuse"="forest"](${bb}););out geom qt;`}
+// Tree canopy: USFS / NLCD percent tree canopy cover (30 m), sampled straight onto the model grid. Raw values 0-100; 254/255 = no data.
+const TCC='https://imagery.geoplatform.gov/iipp/rest/services/Vegetation/USFS_EDW_NLCD_TCC_CONUS/ImageServer/exportImage';
+async function fetchCanopy(A){
+ const mk=t=>{const p=new URLSearchParams({bbox:`${A.w},${A.s},${A.e},${A.n}`,bboxSR:'4326',imageSR:'4326',size:A.N+','+A.N,format:'png',pixelType:'U8',
+  interpolation:'RSP_NearestNeighbor',renderingRule:JSON.stringify({rasterFunction:'None'}),f:'image'});if(t)p.set('time',t);return TCC+'?'+p};
+ for(const t of['1672531200000',null]){
+  try{const im=await withTimeout(loadImg(mk(t)),20000,'timeout');const cv=document.createElement('canvas');cv.width=cv.height=A.N;
+   const g=cv.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0,A.N,A.N);const d=g.getImageData(0,0,A.N,A.N).data,NN=A.N*A.N,cc=new Float32Array(NN);
+   let valid=0,odd=0,sum=0;
+   for(let k=0;k<NN;k++){const v=d[k*4],a=d[k*4+3];if(a<10||v>100){cc[k]=NaN;if(a>=10&&v>100&&v<254)odd++;continue}cc[k]=v/100;valid++;sum+=v}
+   if(valid>NN*.5&&odd<NN*.05&&sum>0)return cc}catch(e){}}
+ throw new Error('canopy service unavailable')}
+function joinRings(ways){const same=(a,b)=>a.lat===b.lat&&a.lon===b.lon,pool=ways.map(w=>w.slice()),out=[];
+ while(pool.length){let r=pool.shift(),guard=0;
+  while(!same(r[0],r[r.length-1])&&guard++<2000){const end=r[r.length-1];const i=pool.findIndex(w=>same(w[0],end)||same(w[w.length-1],end));if(i<0)break;
+   let w=pool.splice(i,1)[0];if(!same(w[0],end))w=w.slice().reverse();r=r.concat(w.slice(1))}
+  if(r.length>3)out.push(r)}
+ return out}
+function applyWoods(A,data){const W={outer:[],inner:[]};const xy=r=>r.map(p=>A.toXY(p.lat,p.lon));
+ for(const el of data.elements){
+  if(el.type==='way'&&el.geometry&&el.geometry.length>3)W.outer.push(xy(el.geometry));
+  else if(el.type==='relation'&&el.members){const ws=role=>el.members.filter(m=>m.type==='way'&&m.geometry&&(role==='inner'?m.role==='inner':m.role!=='inner')).map(m=>m.geometry);
+   joinRings(ws('outer')).forEach(r=>W.outer.push(xy(r)));joinRings(ws('inner')).forEach(r=>W.inner.push(xy(r)))}}
+ A.woods=W}
+function osmBldQuery(A,lkp){const r=Math.round(Math.min(A.half,1.5)*MI);return `[out:json][timeout:45];way["building"](around:${r},${lkp.lat.toFixed(6)},${lkp.lng.toFixed(6)});out center qt;`}
+// USGS ArcGIS services (CORS-enabled). Layer ids are discovered by name so the app keeps working if USGS renumbers them.
+const AGS_LAYERS={};
+async function agsLayers(base,signal){if(AGS_LAYERS[base])return AGS_LAYERS[base];
+ const r=await fetch(base+'/layers?f=json',{signal});if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();if(!j.layers)throw new Error('no layer list');return AGS_LAYERS[base]=j.layers}
+async function agsQuery(base,id,A,signal){const feats=[];
+ for(let off=0,page=0;page<8;page++,off+=2000){
+  const p=new URLSearchParams({where:'1=1',geometry:`${A.w},${A.s},${A.e},${A.n}`,geometryType:'esriGeometryEnvelope',inSR:'4326',spatialRel:'esriSpatialRelIntersects',
+   outFields:'',returnGeometry:'true',outSR:'4326',geometryPrecision:'6',f:'geojson',resultOffset:String(off),resultRecordCount:'2000'});
+  const r=await fetch(`${base}/${id}/query?${p}`,{signal});if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();
+  if(j.error)throw new Error(j.error.message||'query error');feats.push(...(j.features||[]));
+  if(!(j.exceededTransferLimit||(j.properties&&j.properties.exceededTransferLimit))||!(j.features||[]).length)break}
+ return feats}
+async function usgsTransport(A,signal){const base='https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer';
+ const layers=(await agsLayers(base,signal)).filter(l=>l.geometryType==='esriGeometryPolyline');
+ const pick=layers.map(l=>({id:l.id,kind:/trail/i.test(l.name)?'trail':/rail/i.test(l.name)?null:/road|street|highway|interstate|ramp|connector|route/i.test(l.name)?'road':null})).filter(x=>x.kind);
+ if(!pick.length)throw new Error('road and trail layers not found');
+ const out={road:[],trail:[]};await Promise.all(pick.map(async x=>{const f=await agsQuery(base,x.id,A,signal);out[x.kind].push(...f)}));return out}
+async function usgsHydro(A,signal){const base='https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer';
+ const layers=await agsLayers(base,signal);const find=re=>layers.filter(l=>re.test(l.name)&&l.geometryType);
+ const fl=find(/^flowline.*large/i),wb=find(/^waterbody.*large/i),ar=find(/^area.*large/i);
+ const flIds=fl.length?fl.map(l=>l.id):[6];
+ const out={stream:[],water:[]};
+ await Promise.all([...flIds.map(async id=>out.stream.push(...await agsQuery(base,id,A,signal))),...wb.concat(ar).map(async l=>out.water.push(...await agsQuery(base,l.id,A,signal)))]);
+ return out}
+function geoLines(A,f){const g=f.geometry;if(!g)return[];const ring=c=>c.map(p=>A.toXY(p[1],p[0]));
+ if(g.type==='LineString')return[ring(g.coordinates)];if(g.type==='MultiLineString')return g.coordinates.map(ring);
+ if(g.type==='Polygon')return g.coordinates.map(ring);if(g.type==='MultiPolygon')return g.coordinates.flat().map(ring);return[]}
+function geoPolys(A,f){const g=f.geometry;if(!g)return[];const ring=c=>c.map(p=>A.toXY(p[1],p[0]));
+ if(g.type==='Polygon')return[ring(g.coordinates[0])];if(g.type==='MultiPolygon')return g.coordinates.map(p=>ring(p[0]));return[]}
+function makeArea(lat0,lon0,half){
+ const N=200,c=2*half/N,cos0=Math.cos(lat0*Math.PI/180);
+ const A={lat0,lon0,half,N,c,cos0,
+  toXY:(la,lo)=>[(lo-lon0)*69.172*cos0,(la-lat0)*69.0],
+  toLL:(x,y)=>[lat0+y/69.0,lon0+x/(69.172*cos0)]};
+ A.s=lat0-half/69;A.n=lat0+half/69;A.w=lon0-half/(69.172*cos0);A.e=lon0+half/(69.172*cos0);
+ const NN=N*N;A.warn=[];A.lines={road:[],trail:[],stream:[],waterEdge:[]};A.polys=[];A.bld=[];
+ A.road=new Uint8Array(NN);A.trail=new Uint8Array(NN);A.osmStream=new Uint8Array(NN);A.water=new Uint8Array(NN);A.bldM=new Uint8Array(NN);
+ A.demStream=new Uint8Array(NN);A.demSegs=[];A.counts=null;
+ return A;
 }
-function osmStatus(T){if(S.mode!=='osm'||S.tcache!==T)return;
- status([T.tiles&&T.tiles(),T.featMsg,T.demMsg].filter(Boolean).join(' · '))}
-function loadDEM(T,v,latN,lonW,latS,lonE,cosl){
- const N=T.N,c=T.c;const zd=clamp(Math.ceil(Math.log2(156543.034*cosl/(c*MI_M))),1,14);
- const[ax,ay]=ll2px(latN,lonW,zd),[bx,by]=ll2px(latS,lonE,zd);
- const tx0=Math.floor(ax/256),ty0=Math.floor(ay/256),tx1=Math.floor(bx/256),ty1=Math.floor(by/256);
- const MW=(tx1-tx0+1)*256,MH=(ty1-ty0+1)*256;const mc=document.createElement('canvas');mc.width=MW;mc.height=MH;const mg=mc.getContext('2d',{willReadFrequently:true});
- const jobs=[];T.demMsg='Loading terrain…';
- for(let tx=tx0;tx<=tx1;tx++)for(let ty=ty0;ty<=ty1;ty++)jobs.push(new Promise((res,rej)=>{const im=new Image();im.crossOrigin='anonymous';
-  im.onload=()=>{mg.drawImage(im,(tx-tx0)*256,(ty-ty0)*256);res()};im.onerror=rej;
-  im.src=`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zd}/${tx}/${ty}.png`}));
- Promise.all(jobs).then(()=>{if(S.tcache!==T)return;
-  const D=mg.getImageData(0,0,MW,MH).data;const el=(px,py)=>{px=clamp(px,0,MW-1);py=clamp(py,0,MH-1);const o=(py*MW+px)*4;return(D[o]*256+D[o+1]+D[o+2]/256-32768)*3.28084};
-  const E=new Float32Array(N*N);let mn=1e9,mx=-1e9;
-  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const[la,lo]=w2ll(T.x0+(i+.5)*c,T.y0-(j+.5)*c);let[px,py]=ll2px(la,lo,zd);px-=tx0*256+.5;py-=ty0*256+.5;
-   const ix=Math.floor(px),iy=Math.floor(py),fx=px-ix,fy=py-iy;
-   const e=el(ix,iy)*(1-fx)*(1-fy)+el(ix+1,iy)*fx*(1-fy)+el(ix,iy+1)*(1-fx)*fy+el(ix+1,iy+1)*fx*fy;
-   E[j*N+i]=e;if(e<mn)mn=e;if(e>mx)mx=e}
-  T.elev=E;T.mn=mn;T.mx=mx;makeContours(T);T.demMsg='';compute()
- }).catch(()=>{if(S.tcache!==T)return;T.demMsg='Terrain did not load, so slope is not used.';osmStatus(T)})
+function computeDem(A){const N=A.N,E=A.E;
+ let mn=1e9,mx=-1e9;for(const v of E){if(v<mn)mn=v;if(v>mx)mx=v}A.mn=mn;A.mx=mx;
+ const idx=Array.from({length:N*N},(_,k)=>k).sort((a,b)=>E[b]-E[a]);const acc=new Float32Array(N*N).fill(A.c*A.c),down=new Int32Array(N*N).fill(-1);
+ for(const k of idx){const i=k%N,j=(k/N)|0;let best=-1,bd=0;
+  for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){if(!di&&!dj)continue;const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=N||jj>=N)continue;const kk=jj*N+ii,drop=(E[k]-E[kk])/(di&&dj?1.414:1);if(drop>bd){bd=drop;best=kk}}
+  down[k]=best;if(best>=0)acc[best]+=acc[k]}
+ const thr=Math.max(.1,25*A.c*A.c);
+ for(let k=0;k<N*N;k++)if(acc[k]>thr)A.demStream[k]=1;
+ for(let k=0;k<N*N;k++)if(A.demStream[k]&&down[k]>=0&&A.demStream[down[k]])A.demSegs.push([k%N,(k/N)|0,down[k]%N,(down[k]/N)|0]);
 }
-function ensureFeatures(T){
- const F=S.feat,[s,w,n,e]=T.bbox,ok=S.origin.lat+','+S.origin.lon;
- if(F&&F.ok===ok&&F.bbox[0]<=s&&F.bbox[1]<=w&&F.bbox[2]>=n&&F.bbox[3]>=e){
-  if(F.data)attachFeatures(T,F.data,F);else{F.waiters.push(T);T.featMsg='Loading roads, trails and water…';osmStatus(T)}return}
- const ph=(n-s)*.3,pw=(e-w)*.3,bb=[s-ph,w-pw,n+ph,e+pw];
- const spanMi=(bb[2]-bb[0])*111320/MI_M,withB=spanMi<=7;
- const G={ok,bbox:bb,data:null,waiters:[T],withB};S.feat=G;T.featMsg='Loading roads, trails and water…';osmStatus(T);
- const box=bb.map(v=>v.toFixed(5)).join(',');
- const q=`[out:json][timeout:40][bbox:${box}];(way["highway"];way["waterway"];way["natural"="water"];way["landuse"="reservoir"];relation["natural"="water"];)->.a;.a out geom qt;`+(withB?`way["building"];out ids center qt;`:'');
- (async()=>{let lastErr;for(const url of OVERPASS){try{const r=await fetch(url,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'}});
-   if(!r.ok)throw new Error(r.status);return await r.json()}catch(err){lastErr=err}}throw lastErr})()
- .then(js=>{G.data=parseOSM(js);if(S.feat!==G)return;G.waiters.forEach(t=>{if(S.tcache===t)attachFeatures(t,G.data,G)});G.waiters=[]})
- .catch(()=>{if(S.feat===G)S.feat=null;G.waiters.forEach(t=>{t.featMsg='Roads and water did not load from OpenStreetMap. Draw them, or tap Center map on LKP to retry.';osmStatus(t)})});
+function applyOSM(A,data){
+ for(const el of data.elements){const t=el.tags||{};
+  if(el.type==='way'&&el.center&&t.building){A.bld.push(A.toXY(el.center.lat,el.center.lon));continue}
+  if(el.type!=='way'||!el.geometry)continue;const gm=el.geometry;const pts=gm.map(p=>A.toXY(p.lat,p.lon));if(pts.length<2)continue;
+  if(t.highway){if(TRAIL_TYPES.test(t.highway))A.lines.trail.push(pts);else if(ROAD_TYPES.test(t.highway))A.lines.road.push(pts)}
+  else if(t.waterway)A.lines.stream.push(pts);
+  else if(t.natural==='water'||t.landuse==='reservoir'){const closed=gm.length>3&&gm[0].lat===gm[gm.length-1].lat&&gm[0].lon===gm[gm.length-1].lon;if(closed)A.polys.push(pts);A.lines.waterEdge.push(pts)}}
 }
-function parseOSM(js){
- const out={roads:[],trails:[],streams:[],water:[],bld:[]};
- const pts=g=>g.map(p=>[p.lat,p.lon]);
- for(const el of js.elements||[]){const t=el.tags;
-  if(el.type==='way'&&el.center&&!t){out.bld.push([el.center.lat,el.center.lon]);continue}
-  if(!t)continue;
-  if(el.type==='way'&&el.geometry){const g=pts(el.geometry);
-   if(t.highway&&ROADS.test(t.highway))out.roads.push(g);
-   else if(t.highway&&TRAILS.test(t.highway))out.trails.push(g);
-   else if(t.waterway&&STREAMS.test(t.waterway))out.streams.push(g);
-   else if(t.natural==='water'||t.landuse==='reservoir'||t.waterway==='riverbank')out.water.push(g)}
-  else if(el.type==='relation'&&el.members){const ring=[];for(const m of el.members)if(m.role==='outer'&&m.geometry){
-    const g=pts(m.geometry);const first=g[0],last=g[g.length-1];
-    if(first[0]===last[0]&&first[1]===last[1])out.water.push(g);else ring.push(...g)}
-   if(ring.length>2)out.water.push(ring)}}
- return out;
+function applyUSGS(A,data){
+ for(const k of['road','trail','stream'])(data[k]||[]).forEach(f=>geoLines(A,f).forEach(l=>{if(l.length>1)A.lines[k].push(l)}));
+ (data.water||[]).forEach(f=>{geoPolys(A,f).forEach(p=>A.polys.push(p));geoLines(A,f).forEach(l=>A.lines.waterEdge.push(l))});
 }
-function attachFeatures(T,d,G){
- const W=a=>a.map(([la,lo])=>ll2w(la,lo));
- rasterLines(d.roads.map(W),T,T.roadMask);rasterLines(d.trails.map(W),T,T.trailMask);rasterLines(d.streams.map(W),T,T.streamMask);
- const wp=d.water.map(W);rasterPoly(wp,T,T.water);rasterLines(wp,T,T.water);
- rasterDisc(d.bld.map(([la,lo])=>{const[x,y]=ll2w(la,lo);return[x,y,.012]}),T,T.bldMask);
- T.feat=d;T.featMsg=G.withB?'':'Buildings not loaded at this map size (too large an area).';
- osmStatus(T);compute();
-}
-function rasterPoly(polys,T,mask){const{N,c,x0,y0}=T;
- for(const P of polys){if(P.length<3)continue;let ymn=1e9,ymx=-1e9;for(const p of P){if(p[1]<ymn)ymn=p[1];if(p[1]>ymx)ymx=p[1]}
-  const j0=clamp(Math.floor((y0-ymx)/c),0,N-1),j1=clamp(Math.ceil((y0-ymn)/c),0,N-1);
-  for(let j=j0;j<=j1;j++){const yc=y0-(j+.5)*c,xs=[];
-   for(let k=0,m=P.length-1;k<P.length;m=k++){const a=P[m],b=P[k];if((a[1]>yc)!==(b[1]>yc))xs.push(a[0]+(yc-a[1])/(b[1]-a[1])*(b[0]-a[0]))}
-   xs.sort((a,b)=>a-b);
-   for(let k=0;k+1<xs.length;k+=2){const i0=Math.max(0,Math.ceil((xs[k]-x0)/c-.5)),i1=Math.min(N-1,Math.floor((xs[k+1]-x0)/c-.5));for(let i=i0;i<=i1;i++)mask[j*N+i]=1}}}
-}
-function lkpElev(T){if(!T.elev)return 0;if(S.mode==='sample')return elevAt(S.lkp.x,S.lkp.y);
- const i=clamp(Math.floor((S.lkp.x-T.x0)/T.c),0,T.N-1),j=clamp(Math.floor((T.y0-S.lkp.y)/T.c),0,T.N-1);return T.elev[j*T.N+i]}
+function rebuildMasks(A){for(const m of[A.road,A.trail,A.osmStream,A.water,A.bldM])m.fill(0);
+ rasterLines(A.lines.road,A,A.road);rasterLines(A.lines.trail,A,A.trail);rasterLines(A.lines.stream,A,A.osmStream);
+ A.polys.forEach(p=>fillPoly(p,A,A.water));rasterLines(A.lines.waterEdge,A,A.water);A.bld.forEach(p=>markPt(p,A,A.bldM));
+ buildCanopy(A);
+ A.counts={roads:A.lines.road.length,trails:A.lines.trail.length,streams:A.lines.stream.length,water:A.polys.length,buildings:A.bld.length}}
+function buildCanopy(A){const NN=A.N*A.N;
+ if(A.cNLCD){A.canopy=A.cNLCD;A.canopySrc='USFS tree canopy (NLCD)';return}
+ if(A.woods){const m=new Uint8Array(NN),hole=new Uint8Array(NN);const close=p=>p.concat([p[0]]);
+  A.woods.outer.forEach(p=>fillPoly(close(p),A,m));A.woods.inner.forEach(p=>fillPoly(close(p),A,hole));
+  const cc=new Float32Array(NN);for(let k=0;k<NN;k++)cc[k]=m[k]&&!hole[k]?(A.road[k]?.4:.8):.12;A.canopy=cc;A.canopySrc='OpenStreetMap woods (approximate)';return}
+ A.canopy=null;A.canopySrc=null}
+function g2(A,x,y){return[(x+A.half)/A.c,(A.half-y)/A.c]}
+function rasterLines(lines,A,mask){const N=A.N;
+ for(const ln of lines)for(let s=0;s<ln.length-1;s++){const[ax,ay]=g2(A,ln[s][0],ln[s][1]),[bx,by]=g2(A,ln[s+1][0],ln[s+1][1]);
+  if((ax<0&&bx<0)||(ay<0&&by<0)||(ax>=N&&bx>=N)||(ay>=N&&by>=N))continue;
+  const n=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)*2));
+  for(let t=0;t<=n;t++){const i=Math.floor(ax+(bx-ax)*t/n),j=Math.floor(ay+(by-ay)*t/n);if(i>=0&&j>=0&&i<N&&j<N)mask[j*N+i]=1}}}
+function markPt(p,A,mask){const[gx,gy]=g2(A,p[0],p[1]);const i=Math.floor(gx),j=Math.floor(gy);if(i>=0&&j>=0&&i<A.N&&j<A.N)mask[j*A.N+i]=1}
+function fillPoly(pts,A,mask){const N=A.N;const g=pts.map(p=>g2(A,p[0],p[1]));let y0=1e9,y1=-1e9;g.forEach(p=>{y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1])});
+ for(let j=Math.max(0,Math.floor(y0));j<=Math.min(N-1,Math.ceil(y1));j++){const yc=j+.5,xs=[];
+  for(let k=0;k<g.length-1;k++){const[ax,ay]=g[k],[bx,by]=g[k+1];if((ay<=yc&&by>yc)||(by<=yc&&ay>yc))xs.push(ax+(yc-ay)/(by-ay)*(bx-ax))}
+  xs.sort((a,b)=>a-b);for(let k=0;k+1<xs.length;k+=2)for(let i=Math.max(0,Math.ceil(xs[k]-.5));i<=Math.min(N-1,Math.floor(xs[k+1]-.5));i++)mask[j*N+i]=1}}
+function chamfer(mask,N,c){const D=new Float32Array(N*N),d2=c*1.4142;for(let k=0;k<N*N;k++)D[k]=mask[k]?0:1e9;
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i;let v=D[k];if(i>0)v=Math.min(v,D[k-1]+c);if(j>0){v=Math.min(v,D[k-N]+c);if(i>0)v=Math.min(v,D[k-N-1]+d2);if(i<N-1)v=Math.min(v,D[k-N+1]+d2)}D[k]=v}
+ for(let j=N-1;j>=0;j--)for(let i=N-1;i>=0;i--){const k=j*N+i;let v=D[k];if(i<N-1)v=Math.min(v,D[k+1]+c);if(j<N-1){v=Math.min(v,D[k+N]+c);if(i<N-1)v=Math.min(v,D[k+N+1]+d2);if(i>0)v=Math.min(v,D[k+N-1]+d2)}D[k]=v}
+ return D}
 function marching(F,N,L,cb){
  for(let j=0;j<N-1;j++)for(let i=0;i<N-1;i++){
   const a=F[j*N+i],b=F[j*N+i+1],c=F[(j+1)*N+i+1],d=F[(j+1)*N+i];
@@ -445,221 +636,545 @@ function marching(F,N,L,cb){
   const s=(p,q)=>cb(p[0],p[1],q[0],q[1]);
   switch(code){case 1:case 14:s(Lf(),B());break;case 2:case 13:s(B(),R());break;case 3:case 12:s(Lf(),R());break;
    case 4:case 11:s(T(),R());break;case 6:case 9:s(T(),B());break;case 7:case 8:s(T(),Lf());break;
-   case 5:s(T(),Lf());s(B(),R());break;case 10:s(T(),R());s(Lf(),B());break}
- }
-}
-function rasterLines(lines,T,mask){const{N,c,x0,y0}=T;
- for(const ln of lines)for(let s=0;s<ln.length-1;s++){const[ax,ay]=ln[s],[bx,by]=ln[s+1];const len=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.ceil(len/(c*.5)));
-  for(let t=0;t<=n;t++){const x=ax+(bx-ax)*t/n,y=ay+(by-ay)*t/n;const i=Math.floor((x-x0)/c),j=Math.floor((y0-y)/c);if(i>=0&&j>=0&&i<N&&j<N)mask[j*N+i]=1}}}
-function rasterDisc(pts,T,mask){const{N,c,x0,y0}=T;for(const[x,y,r]of pts){const rr=Math.max(r||0,c*.5);
- const i0=Math.floor((x-rr-x0)/c),i1=Math.floor((x+rr-x0)/c),j0=Math.floor((y0-y-rr)/c),j1=Math.floor((y0-y+rr)/c);
- for(let j=Math.max(0,j0);j<=Math.min(N-1,j1);j++)for(let i=Math.max(0,i0);i<=Math.min(N-1,i1);i++){const cx=x0+(i+.5)*c,cy=y0-(j+.5)*c;if(Math.hypot(cx-x,cy-y)<=rr)mask[j*N+i]=1}}}
-function chamfer(mask,N,c){const D=new Float32Array(N*N),d2=c*1.4142;
- for(let k=0;k<N*N;k++)D[k]=mask[k]?0:1e9;
- for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i;let v=D[k];
-  if(i>0)v=Math.min(v,D[k-1]+c);if(j>0){v=Math.min(v,D[k-N]+c);if(i>0)v=Math.min(v,D[k-N-1]+d2);if(i<N-1)v=Math.min(v,D[k-N+1]+d2)}D[k]=v}
- for(let j=N-1;j>=0;j--)for(let i=N-1;i>=0;i--){const k=j*N+i;let v=D[k];
-  if(i<N-1)v=Math.min(v,D[k+1]+c);if(j<N-1){v=Math.min(v,D[k+N]+c);if(i<N-1)v=Math.min(v,D[k+N+1]+d2);if(i>0)v=Math.min(v,D[k+N-1]+d2)}D[k]=v}
- return D}
+   case 5:s(T(),Lf());s(B(),R());break;case 10:s(T(),R());s(Lf(),B());break}}}
+function chain(segs){const key=(x,y)=>Math.round(x*1e4)+','+Math.round(y*1e4);const ends=new Map(),used=new Uint8Array(segs.length);
+ segs.forEach((s,n)=>{[key(s[0],s[1]),key(s[2],s[3])].forEach(k=>{if(!ends.has(k))ends.set(k,[]);ends.get(k).push(n)})});
+ const out=[];
+ for(let n=0;n<segs.length;n++){if(used[n])continue;used[n]=1;const pts=[[segs[n][0],segs[n][1]],[segs[n][2],segs[n][3]]];
+  for(const dir of[1,0]){for(;;){const p=dir?pts[pts.length-1]:pts[0];const cand=(ends.get(key(p[0],p[1]))||[]).find(m=>!used[m]);if(cand===undefined)break;used[cand]=1;
+    const s=segs[cand];const nx=key(s[0],s[1])===key(p[0],p[1])?[s[2],s[3]]:[s[0],s[1]];dir?pts.push(nx):pts.unshift(nx)}}
+  if(pts.length>3)out.push(pts)}
+ return out}
 
-// ---------- model ----------
-function readInputs(){
- const cat=CATS.find(c=>c.id===catSel.value);const age=+$('age').value;
- const meds=MED.filter(m=>$('m_'+m.id).checked);const hours=Math.max(0,+$('hours').value||0);
- const wx=WX[$('weather').value];const night=$('night').checked;
- let q=['q25','q50','q75','q95'].map(k=>Math.max(.05,+$(k).value||.1));for(let i=1;i<4;i++)q[i]=Math.max(q[i],q[i-1]+.02);
- const timeF=Math.min(1,.25+.75*Math.min(1,hours/10));
- let medD=1,slopeM=1,pathM=1,waterM=1;meds.forEach(m=>{medD*=m.dist||1;slopeM*=m.slope||1;pathM*=m.path||1;waterM*=m.water||1});
- const scale=timeF*medD*wx.d*(night?.85:1);
- let urg=0;if(age<7)urg+=2;else if(age>=75)urg+=2;else if(age>=65)urg+=1;
- meds.forEach(m=>urg+=m.urg);urg+=wx.u+(night?1:0)+(hours>24?2:hours>12?1:0);
- if(['despondent','autism','child1_3'].includes(cat.id))urg+=1;
- return{cat,age,meds,hours,wx,night,q,qa:q.map(v=>v*scale),scale,timeF,slopeM,pathM,waterM,urg,
-  head:$('useHead').checked?{b:(+$('heading').value||0)*Math.PI/180,k:+$('headConf').value}:null};
+// ================= model =================
+function covers(A,P){if(!A)return false;const[x,y]=A.toXY(S.lkp.lat,S.lkp.lng);return Math.max(Math.abs(x),Math.abs(y))+P.qa[3]*1.12<=A.half}
+// force = load fresh data for the current LKP. Otherwise reuse loaded data and only reload if the LKP left the area.
+async function run(force){
+ const P=readInputs();
+ if(!force&&S.area){const[x,y]=S.area.toXY(S.lkp.lat,S.lkp.lng);if(Math.max(Math.abs(x),Math.abs(y))<S.area.half*.8){compute();return}}
+ const token=++S.loadToken;if(S.abort)S.abort.abort();S.abort=new AbortController();const signal=S.abort.signal;
+ const half=Math.min(6,Math.max(1,P.qa[3]*1.3));const A=makeArea(S.lkp.lat,S.lkp.lng,half);
+ A.osmPending=true;S.osmStart=Date.now();A.src={};
+ const loaders=[
+  ['usgsRoads','USGS roads and trails',()=>usgsTransport(A,signal),d=>applyUSGS(A,d)],
+  ['usgsHydro','USGS streams and water',()=>usgsHydro(A,signal),d=>applyUSGS(A,d)],
+  ['osmWays','OpenStreetMap roads, trails and water',()=>overpass(osmWaysQuery(A),signal),d=>applyOSM(A,d)],
+  ['osmBld','OpenStreetMap buildings',()=>overpass(osmBldQuery(A,S.lkp),signal),d=>applyOSM(A,d)],
+  ['canopy','Tree canopy',()=>fetchCanopy(A),d=>{A.cNLCD=d}],
+  ['osmWoods','OpenStreetMap woods',()=>overpass(osmWoodsQuery(A),signal),d=>applyWoods(A,d)]];
+ const jobs=loaders.map(([k,label,go,apply])=>{A.src[k]={label,state:'loading'};return go().then(d=>({k,apply,d}),e=>({k,err:e}))});
+ status('Loading elevation for a '+(2*half).toFixed(1)+' mile square','busy');
+ try{A.E=(await withTimeout(fetchElevation(A),25000,'timeout')).E;computeDem(A)}
+ catch(e){A.E=null;A.warn.push('Elevation tiles did not load, so slope and drainages are not in the model.')}
+ if(token!==S.loadToken)return;
+ S.area=A;gArea.clearLayers();L.rectangle([[A.s,A.w],[A.n,A.e]],{color:'#1B241E',weight:1.5,dashArray:'2 6',fill:false,interactive:false}).addTo(gArea);
+ compute();
+ clearInterval(S.tick);S.tick=setInterval(()=>{if(token===S.loadToken&&A.osmPending)status(statusLine(A),'busy');else clearInterval(S.tick)},1000);
+ let left=jobs.length;
+ await Promise.all(jobs.map(j=>j.then(r=>{if(token!==S.loadToken)return;left--;
+  if(r.err){A.src[r.k].state='failed';A.src[r.k].err=r.err.message}else{A.src[r.k].state='ok';try{r.apply(r.d)}catch(e){A.src[r.k].state='failed';A.src[r.k].err='could not read data'}}
+  rebuildMasks(A);if(!left)A.osmPending=false;compute()})));
+ if(token!==S.loadToken)return;
+ const failed=Object.entries(A.src).filter(([k,x])=>x.state==='failed'&&k!=='canopy'&&k!=='osmWoods').map(([,x])=>x);
+ failed.forEach(x=>A.warn.push(x.label+' did not load ('+x.err+').'));
+ if(A.src.canopy.state!=='ok')A.warn.push(A.src.osmWoods.state==='ok'?'Tree canopy service did not answer, so drone visibility uses OpenStreetMap woods (less precise).':'Tree canopy did not load, so drone visibility assumes moderate tree cover everywhere.');
+ const gotRoads=A.src.usgsRoads.state==='ok'||A.src.osmWays.state==='ok',gotWater=A.src.usgsHydro.state==='ok'||A.src.osmWays.state==='ok';
+ if(!gotRoads||!gotWater)A.warn.push('Press Run analysis to try again, or draw key '+(!gotRoads?'roads and trails':'creeks and ponds')+' by hand.');
+ A.osmPending=false;clearInterval(S.tick);compute();
+}
+function statusLine(A){
+ const src=A.src?Object.values(A.src):[];const pend=src.filter(x=>x.state==='loading').length;
+ if(A.osmPending&&pend)return `Map ready · loading features (${src.length-pend} of ${src.length} sources done, ${Math.round((Date.now()-S.osmStart)/1000)}s)`;
+ const c=A.counts;const w=A.warn.length?' · '+A.warn.length+' data note'+(A.warn.length>1?'s':'')+' (see Results)':'';
+ return c?`Analysis ready · ${c.roads} roads, ${c.trails} trails, ${c.streams} streams, ${c.water} water bodies, ${c.buildings} buildings${w}`:'Analysis ready'+w;
 }
 function compute(){
- const P=readInputs();S.r95=P.qa[3];
- const v=view();const T=buildTerrain(v);const{N,c,x0,y0}=T;
- // feature masks
- const road=T.roadMask?T.roadMask.slice():new Uint8Array(N*N),trail=T.trailMask?T.trailMask.slice():new Uint8Array(N*N),stream=T.streamMask.slice(),water=T.water.slice(),bld=T.bldMask?T.bldMask.slice():new Uint8Array(N*N);
- if(S.mode==='sample'){rasterLines(PROC.roads,T,road);rasterLines(PROC.trails,T,trail);rasterDisc(PROC.bld.map(p=>[p[0],p[1],.012]),T,bld)}
- for(const f of S.user){if(f.t==='road')rasterLines([f.pts],T,road);else if(f.t==='trail')rasterLines([f.pts],T,trail);else if(f.t==='stream')rasterLines([f.pts],T,stream);
-  else if(f.t==='water')rasterDisc(f.pts,T,water);else if(f.t==='building')rasterDisc(f.pts.map(p=>[p[0],p[1],.012]),T,bld)}
- const any=m=>m.some(v=>v);
- const Dr=any(road)?chamfer(road,N,c):null,Dt=any(trail)?chamfer(trail,N,c):null,Ds=any(stream)?chamfer(stream,N,c):null,
-  Dw=any(water)?chamfer(water,N,c):null,Db=any(bld)?chamfer(bld,N,c):null;
- const w=P.cat.w,Lr=.07;
- const qa=P.qa,cdfR=[0,qa[0],qa[1],qa[2],qa[3],qa[3]*1.8],cdfV=[0,.25,.5,.75,.95,1];
- const E=T.elev;const eL=lkpElev(T);const er=E?Math.max(60,T.mx-T.mn):1;const cf=c*5280;
- const p=new Float64Array(N*N);let distMass=0,sum=0;
- for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i;const x=x0+(i+.5)*c,y=y0-(j+.5)*c;
-  const dx=x-S.lkp.x,dy=y-S.lkp.y,r=Math.hypot(dx,dy),re=Math.max(r,c*.7);
+ const A=S.area;if(!A)return;const P=readInputs();const N=A.N,c=A.c;
+ const road=A.road.slice(),trail=A.trail.slice(),stream=A.osmStream.slice(),water=A.water.slice(),bld=A.bldM.slice();
+ if(P.useDem)for(let k=0;k<N*N;k++)if(A.demStream[k])stream[k]=1;
+ for(const f of S.user){const pts=f.pts.map(p=>A.toXY(p[0],p[1]));
+  if(f.t==='road')rasterLines([pts],A,road);else if(f.t==='trail')rasterLines([pts],A,trail);else if(f.t==='stream')rasterLines([pts],A,stream);
+  else if(f.t==='water'){fillPoly(pts.concat([pts[0]]),A,water);rasterLines([pts.concat([pts[0]])],A,water)}else if(f.t==='building')markPt(pts[0],A,bld)}
+ const any=m=>{for(let k=0;k<m.length;k++)if(m[k])return true;return false};
+ const Dr=any(road)?chamfer(road,N,c):null,Dt=any(trail)?chamfer(trail,N,c):null,Ds=any(stream)?chamfer(stream,N,c):null,Dw=any(water)?chamfer(water,N,c):null,Db=any(bld)?chamfer(bld,N,c):null;
+ const w=P.cat.w,Lr=.07,qa=P.qa,cdfR=[0,qa[0],qa[1],qa[2],qa[3],qa[3]*1.8],cdfV=[0,.25,.5,.75,.95,1];
+ const[lx,ly]=A.toXY(S.lkp.lat,S.lkp.lng);const E=A.E;
+ let eL=0,er=1;if(E){const li=Math.min(N-1,Math.max(0,Math.floor((lx+A.half)/c))),lj=Math.min(N-1,Math.max(0,Math.floor((A.half-ly)/c)));eL=E[lj*N+li];er=Math.max(20,A.mx-A.mn)}
+ const cm=c*MI;const p=new Float64Array(N*N);let sum=0,distMass=0;
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i,x=-A.half+(i+.5)*c,y=A.half-(j+.5)*c,dx=x-lx,dy=y-ly,r=Math.hypot(dx,dy),re=Math.max(r,c*.7);
   let s=4;for(let n=1;n<cdfR.length;n++)if(r<cdfR[n]){s=n-1;break}
-  let dens=r>=cdfR[5]?.02/(cdfR[5]*cdfR[5]*Math.PI)*Math.exp(-(r-cdfR[5])/cdfR[4]):(cdfV[s+1]-cdfV[s])/(cdfR[s+1]-cdfR[s])/(2*Math.PI*re);
-  distMass+=dens*c*c;
-  let m=1;
+  const dens=r>=cdfR[5]?.02/(Math.PI*cdfR[5]**2)*Math.exp(-(r-cdfR[5])/cdfR[4]):(cdfV[s+1]-cdfV[s])/(cdfR[s+1]-cdfR[s])/(2*Math.PI*re);
+  distMass+=dens*c*c;let m=1;
   if(Dr)m*=1+w.road*P.pathM*Math.exp(-Dr[k]/Lr);
   if(Dt)m*=1+w.trail*P.pathM*Math.exp(-Dt[k]/Lr);
   if(Ds)m*=1+w.stream*Math.exp(-Ds[k]/Lr);
   if(Db)m*=1+w.structure*Math.exp(-Db[k]/(Lr*.8));
   if(Dw){if(water[k])m*=w.waterIn*P.waterM;else m*=1+w.water*P.waterM*Math.exp(-Dw[k]/Lr)}
-  if(E){const eU=E[Math.max(0,j-1)*N+i],eD=E[Math.min(N-1,j+1)*N+i],eLf=E[j*N+Math.max(0,i-1)],eR=E[j*N+Math.min(N-1,i+1)];
-   const grade=Math.hypot((eR-eLf)/(2*cf),(eU-eD)/(2*cf));m*=Math.exp(-w.slope*P.slopeM*grade*8);
+  if(E){const eU=E[Math.max(0,j-1)*N+i],eD=E[Math.min(N-1,j+1)*N+i],eW=E[j*N+Math.max(0,i-1)],eE=E[j*N+Math.min(N-1,i+1)];
+   const grade=Math.hypot((eE-eW)/(2*cm),(eU-eD)/(2*cm));m*=Math.exp(-w.slope*P.slopeM*grade*8);
    const dz=(E[k]-eL)/er;m*=dz>0?Math.exp(w.up*dz*2.2):Math.exp(w.down*(-dz)*2.2)}
-  if(P.head&&r>.03){const ang=Math.atan2(dx,dy);m*=Math.exp(P.head.k*(Math.cos(ang-P.head.b)-1))}
+  if(P.head&&r>.03)m*=Math.exp(P.head.k*(Math.cos(Math.atan2(dx,dy)-P.head.b)-1));
   p[k]=dens*m;sum+=p[k]}
  for(let k=0;k<N*N;k++)p[k]/=sum;
- // rank
  const ord=Array.from({length:N*N},(_,k)=>k).sort((a,b)=>p[b]-p[a]);const C=new Float32Array(N*N);let acc=0;for(const k of ord){acc+=p[k];C[k]=acc}
- // segments
- const SG=8,segs=[];for(let sj=0;sj<SG;sj++)for(let si=0;si<SG;si++)segs.push({id:String.fromCharCode(65+si)+(sj+1),poa:0});
- for(let j=0;j<N;j++)for(let i=0;i<N;i++){segs[Math.floor(j*SG/N)*SG+Math.floor(i*SG/N)].poa+=p[j*N+i]}
- const segA=(v.side/SG)**2;segs.forEach(s=>s.area=segA);
- S.result={P,v,T,p,C,segs,SG,distMass,road,trail,water,bld};
- draw();report();
+ const GR=buildGrid(A,P,p,lx,ly),segs=GR.segs;
+ const negC=new Float32Array(N*N);for(let k=0;k<N*N;k++)negC[k]=-C[k];
+ const bands=[.25,.5,.75,.95].map(lv=>{const sg=[];marching(negC,N,-lv,(a,b,c2,d)=>sg.push([a,b,c2,d]));return{lv,lines:chain(sg)}});
+ const drone=droneModel(A,P,p,water,bld,road,trail,segs,GR.cell);
+ S.result={P,A,C,segs,grid:GR,bands,distMass,drone};
+ render();report();
+ status(statusLine(A),A.osmPending?'busy':(A.warn.length?'err':''));
 }
 
-// ---------- drawing ----------
-const cv=$('map'),ctx=cv.getContext('2d');
-let heatCanvas=null;
-function fitCanvas(){const r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1;const W=Math.round(r.width*d);if(cv.width!==W){cv.width=cv.height=W}return W}
-function draw(){
- const R=S.result;if(!R)return;const W=fitCanvas();const{v,T,C}=R;const N=T.N;const sc=W/N;
- const toS=(x,y)=>[(x-(v.cx-v.side/2))/v.side*W,((v.cy+v.side/2)-y)/v.side*W];
- ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#F2F3EE';ctx.fillRect(0,0,W,W);
- if(S.mode==='image'&&S.img){const[a,b]=toS(-v.iw/2,v.ih/2),[c2,d]=toS(v.iw/2,-v.ih/2);ctx.drawImage(S.img,a,b,c2-a,d-b)}
- else if(T.base){ctx.imageSmoothingEnabled=true;ctx.drawImage(T.base,0,0,W,W)}
- const px=W/700;
- if(T.contours&&$('lCont').checked){ctx.save();ctx.scale(sc,sc);ctx.strokeStyle='rgba(150,105,60,.55)';ctx.lineWidth=.7*px/sc;ctx.stroke(T.contours.minor);ctx.strokeStyle='rgba(130,85,45,.85)';ctx.lineWidth=1.4*px/sc;ctx.stroke(T.contours.major);ctx.restore()}
- // streams
- ctx.save();ctx.strokeStyle='#2F7FC1';ctx.lineCap='round';
- for(const s of T.streamSegs){ctx.lineWidth=s[4]*px;ctx.beginPath();ctx.moveTo((s[0]+.5)*sc,(s[1]+.5)*sc);ctx.lineTo((s[2]+.5)*sc,(s[3]+.5)*sc);ctx.stroke()}
- ctx.restore();
- const line=(pts,col,wd,dash)=>{ctx.save();ctx.strokeStyle=col;ctx.lineWidth=wd*px;ctx.lineJoin=ctx.lineCap='round';if(dash)ctx.setLineDash(dash.map(d=>d*px));ctx.beginPath();pts.forEach((p,i)=>{const[a,b]=toS(p[0],p[1]);i?ctx.lineTo(a,b):ctx.moveTo(a,b)});ctx.stroke();ctx.restore()};
- const bldg=(pts)=>{ctx.fillStyle='#1E1E1E';pts.forEach(p=>{const[a,b]=toS(p[0],p[1]);const s=Math.max(3*px,.018/v.side*W);ctx.fillRect(a-s/2,b-s/2,s,s)})};
- const waterD=(pts)=>{ctx.fillStyle='#96C4E2';pts.forEach(p=>{const[a,b]=toS(p[0],p[1]);ctx.beginPath();ctx.arc(a,b,p[2]/v.side*W,0,7);ctx.fill()})};
- if(S.mode==='sample'){PROC.roads.forEach(r=>{line(r,'#FFFFFF',5);line(r,'#C23B22',2.6)});PROC.trails.forEach(t=>line(t,'#5B3A1E',1.6,[5,4]));bldg(PROC.bld)}
- for(const f of S.user.concat(S.drawing?[S.drawing]:[])){
-  if(f.t==='road'){line(f.pts,'#FFFFFF',5);line(f.pts,'#C23B22',2.6)}else if(f.t==='trail')line(f.pts,'#5B3A1E',1.8,[5,4]);
-  else if(f.t==='stream')line(f.pts,'#2F7FC1',2);else if(f.t==='water')waterD(f.pts);else if(f.t==='building')bldg(f.pts)}
- // heat
- if($('lHeat').checked){
-  if(!heatCanvas){heatCanvas=document.createElement('canvas')}heatCanvas.width=heatCanvas.height=N;
-  const g=heatCanvas.getContext('2d'),im=g.createImageData(N,N);
-  const cols=[[179,18,46,175],[232,80,28,150],[244,155,43,120],[248,212,92,95]];
-  for(let k=0;k<N*N;k++){const cc=C[k];const b=cc<=.25?0:cc<=.5?1:cc<=.75?2:cc<=.95?3:-1;if(b<0)continue;const q=cols[b],o=k*4;im.data[o]=q[0];im.data[o+1]=q[1];im.data[o+2]=q[2];im.data[o+3]=q[3]}
-  g.putImageData(im,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(heatCanvas,0,0,W,W);
-  const negC=new Float32Array(N*N);for(let k=0;k<N*N;k++)negC[k]=-C[k];
-  [[.25,'#7A0B1F',2],[.5,'#B23A12',1.6],[.75,'#B8701A',1.3],[.95,'#9A7C1C',1.1]].forEach(([lv,col,wd])=>{ctx.save();ctx.strokeStyle=col;ctx.lineWidth=wd*px;ctx.beginPath();
-   marching(negC,N,-lv,(a,b,c2,d)=>{ctx.moveTo((a+.5)*sc,(b+.5)*sc);ctx.lineTo((c2+.5)*sc,(d+.5)*sc)});ctx.stroke();ctx.restore()});
- }
+// ================= search grid =================
+// Rings and pie sectors around the LKP (like the LKP Search Grid tool), or an 8 x 8 square grid over the loaded area.
+// Every model cell is assigned to one segment; a segment's POA is the sum of the probability in its cells.
+function buildGrid(A,P,p,lx,ly){
+ const G=P.grid,N=A.N,c=A.c,NN=N*N,cell=new Int16Array(NN).fill(-1),segs=[];
+ const LL=(x,y)=>A.toLL(lx+x,ly+y),pol=(r,b)=>{const a=b*Math.PI/180;return[r*Math.sin(a),r*Math.cos(a)]};
+ if(G.type==='squares'){const SG=8,mi=2*A.half/SG;
+  for(let sj=0;sj<SG;sj++)for(let si=0;si<SG;si++){const x0=-A.half+si*mi,y0=A.half-sj*mi;
+   const pts=[A.toLL(x0,y0),A.toLL(x0+mi,y0),A.toLL(x0+mi,y0-mi),A.toLL(x0,y0-mi)];
+   segs.push({id:String.fromCharCode(65+si)+(sj+1),pts,lp:A.toLL(x0+mi/2,y0-mi/2),acres:mi*mi*640,poa:0,desc:'Square '+(mi<1?Math.round(mi*MI)+' m':mi.toFixed(2)+' mi')+' on a side'})}
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++)cell[j*N+i]=Math.floor(j*SG/N)*SG+Math.floor(i*SG/N)}
+ else{const R=G.rings,n=G.n,w=360/n,rot=G.rot,L='ABCDEFGH',idx=[];
+  const arc=(r,b0,b1)=>{const k=Math.max(4,Math.ceil(Math.abs(b1-b0)/3)),o=[];for(let t=0;t<=k;t++)o.push(pol(r,b0+(b1-b0)*t/k));return o};
+  const dist=r=>r<1?Math.round(r*MI)+' m':r.toFixed(2)+' mi';
+  R.forEach((rout,b)=>{const rin=b?R[b-1]:0;idx[b]=[];
+   if(b===0&&!G.split){idx[b]=Array(n).fill(segs.length);
+    segs.push({id:'A',pts:arc(rout,0,360).slice(0,-1).map(q=>LL(q[0],q[1])),lp:LL(...pol(rout*.55,rot)),acres:Math.PI*rout*rout*640,poa:0,desc:'Inner circle, 0 to '+dist(rout)});return}
+   for(let s=0;s<n;s++){const b0=rot+s*w,b1=b0+w;let q=arc(rout,b0,b1);q=rin>0?q.concat(arc(rin,b1,b0)):q.concat([[0,0]]);
+    idx[b][s]=segs.length;const br=v=>Math.round(((v%360)+360)%360);
+    segs.push({id:L[b]+(s+1),pts:q.map(v=>LL(v[0],v[1])),lp:LL(...pol(rin>0?(rin+rout)/2:rout*.62,b0+w/2)),acres:w/360*Math.PI*(rout*rout-rin*rin)*640,poa:0,
+     desc:`Bearing ${br(b0)}° to ${br(b1)||360}° true, ${dist(rin)} to ${dist(rout)}`})}});
+  for(let j=0;j<N;j++)for(let i=0;i<N;i++){const dx=-A.half+(i+.5)*c-lx,dy=A.half-(j+.5)*c-ly,r=Math.hypot(dx,dy);
+   let b=-1;for(let t=0;t<R.length;t++)if(r<R[t]){b=t;break}if(b<0)continue;
+   const brg=((Math.atan2(dx,dy)*180/Math.PI-rot)%360+360)%360;cell[j*N+i]=idx[b][Math.min(n-1,Math.floor(brg/w))]}}
+ let inside=0;for(let k=0;k<NN;k++)if(cell[k]>=0){segs[cell[k]].poa+=p[k];inside+=p[k]}
+ const ranked=segs.slice().sort((a,b)=>b.poa-a.poa);ranked.forEach((s,n)=>s.rank=n+1);
+ return{segs,cell,inside,type:G.type}}
+
+// ================= drone model =================
+// POD per cell = chance the camera would show a person in that cell, from tree canopy, leaf season, light, weather, water and buildings.
+// Drone value = probability (POA) x POD. Blocks are square tiles of the chosen acreage, ranked by summed value.
+const SENSOR_LABEL={both:'Thermal and RGB',thermal:'Thermal only',rgb:'RGB only'};
+function droneModel(A,P,p,water,bld,road,trail,segs,cellSeg){
+ const D=P.drone,N=A.N,c=A.c,NN=N*N,pod=new Float32Array(NN);
+ const thC=D.light==='night'?(D.wx==='hot'?.75:.95):({mild:.6,hot:.25,cold:.8,wetcold:.75,storm:.5}[D.wx]);
+ const leafF=D.leaves==='on'?1:.55,day=D.light==='day',cano=A.canopy;let ccSum=0;
+ for(let k=0;k<NN;k++){
+  let cc=cano?cano[k]:.35;if(!(cc>=0))cc=.35;if(road[k]||trail[k])cc*=.6;ccSum+=cc;
+  let r,t;
+  if(water[k]){r=day?.6:.03;t=.7*thC}
+  else if(bld[k]){r=.05;t=.05}
+  else{const vR=Math.max(0,1-cc*.95*leafF),vT=Math.max(0,1-cc*.85*leafF);r=day?.8*Math.pow(vR,1.3):.03;t=.9*thC*vT}
+  let v=D.sensor==='rgb'?r:D.sensor==='thermal'?t:1-(1-r)*(1-t);if(D.wx==='storm')v*=.6;pod[k]=v}
+ const side=Math.sqrt(D.blockAc/640),bc=Math.max(3,Math.round(side/c)),nb=Math.ceil(N/bc),blocks=[];
+ for(let bj=0;bj<nb;bj++)for(let bi=0;bi<nb;bi++)blocks.push({bi,bj,p:0,v:0,cc:0,n:0});
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i,b=blocks[Math.floor(j/bc)*nb+Math.floor(i/bc)];
+  b.p+=p[k];b.v+=p[k]*pod[k];b.cc+=cano&&cano[k]>=0?cano[k]:.35;b.n++}
+ blocks.forEach(b=>{b.acres=b.n*c*c*640;b.pod=b.p>0?b.v/b.p:0;b.canopy=b.cc/b.n;
+  const x0=-A.half+b.bi*bc*c,y0=A.half-b.bj*bc*c,x1=Math.min(A.half,x0+bc*c),y1=Math.max(-A.half,y0-bc*c);b.nw=A.toLL(x0,y0);b.se=A.toLL(x1,y1)});
+ const top=blocks.filter(b=>b.v>0).sort((a,b)=>b.v-a.v).slice(0,D.count);
+ top.forEach((b,n)=>{b.name='DR'+(n+1);b.flights=Math.max(1,Math.ceil(b.acres/D.apf))});
+ const pos=top.reduce((s,b)=>s+b.v,0);
+ // ground-team segments: high POA where the camera sees poorly
+ const sv=segs.map(()=>0);for(let k=0;k<NN;k++)if(cellSeg[k]>=0)sv[cellSeg[k]]+=p[k]*pod[k];
+ const ground=segs.map((s,n)=>({id:s.id,poa:s.poa,pod:s.poa>0?sv[n]/s.poa:0})).sort((a,b)=>b.poa-a.poa).slice(0,10).filter(s=>s.pod<.35).slice(0,5);
+ return{D,pod,blocks:top,pos,ground,meanCanopy:ccSum/NN,src:A.canopySrc||null,thC}}
+function droneNotes(P,dr){const D=P.drone,out=[];
+ if(D.wx==='storm')out.push('Check wind and rain limits before launching. Storm conditions may ground drones and cut thermal range.');
+ if(D.sensor!=='rgb'&&D.light==='day'&&D.wx==='hot')out.push('Thermal contrast is poor in daytime heat. Fly thermal at night or first light; lean on RGB now.');
+ if(D.sensor!=='rgb'&&D.light==='night')out.push('Night thermal is the strongest drone tool. Fly the drone blocks low and slow, and check water edges and field margins.');
+ if(D.sensor==='rgb'&&D.light==='night')out.push('An RGB-only camera sees almost nothing in the dark. Use a spotlight on known routes, or hold drone blocks for daylight.');
+ if(D.leaves==='on'&&dr.meanCanopy>.45)out.push('Heavy leaf-on canopy hides people from both cameras. Use drones on open ground, edges, water and road corridors; send ground teams into the woods.');
+ if(D.leaves==='off')out.push('Leaf-off: thermal sees through bare deciduous canopy much better than in summer. Evergreen pine stands still block it.');
+ return out}
+
+// ================= rendering =================
+// Terrain shading and contours from the elevation grid. Built once per loaded area.
+function renderTerrain(A){
+ if(S.terrainFor===A)return;S.terrainFor=A;gHill.clearLayers();gCont.clearLayers();S.hillCv=S.contCv=null;
+ if(!A.E)return;const N=A.N,E=A.E,cm=A.c*MI,R=1024,bounds=[[A.s,A.w],[A.n,A.e]];
+ const hc=document.createElement('canvas');hc.width=hc.height=N;const hg=hc.getContext('2d'),im=hg.createImageData(N,N);
+ const Ls=[-.55,.55,.63],z=2.2;
+ for(let j=0;j<N;j++)for(let i=0;i<N;i++){const k=j*N+i,o=k*4;
+  const gx=(E[j*N+Math.min(N-1,i+1)]-E[j*N+Math.max(0,i-1)])/(2*cm)*z,gy=(E[Math.max(0,j-1)*N+i]-E[Math.min(N-1,j+1)*N+i])/(2*cm)*z;
+  const sh=Math.max(0,(-gx*Ls[0]-gy*Ls[1]+Ls[2])/Math.hypot(gx,gy,1));
+  if(sh<.62){im.data[o]=20;im.data[o+1]=28;im.data[o+2]=22;im.data[o+3]=Math.round(Math.min(1,(.62-sh)*1.6)*150)}
+  else{im.data[o]=255;im.data[o+1]=250;im.data[o+2]=235;im.data[o+3]=Math.round(Math.min(1,(sh-.62)*2.4)*70)}}
+ hg.putImageData(im,0,0);const big=document.createElement('canvas');big.width=big.height=R;const bg=big.getContext('2d');bg.imageSmoothingEnabled=true;bg.drawImage(hc,0,0,R,R);
+ L.imageOverlay(big.toDataURL(),bounds,{interactive:false,opacity:.85}).addTo(gHill);S.hillCv=big;
+ const F=new Float32Array(N*N);let mn=1e9,mx=-1e9;for(let k=0;k<N*N;k++){F[k]=E[k]*3.28084;if(F[k]<mn)mn=F[k];if(F[k]>mx)mx=F[k]}
+ const iv=[5,10,20,25,40,50,100,200].find(v=>(mx-mn)/v<=28)||200;A.contIv=iv;
+ const cc=document.createElement('canvas');cc.width=cc.height=R;const cg=cc.getContext('2d'),sc=R/N;cg.lineJoin='round';
+ for(let lv=Math.ceil(mn/iv)*iv;lv<mx;lv+=iv){const major=Math.round(lv/iv)%5===0;cg.strokeStyle=major?'rgba(120,70,25,.9)':'rgba(140,90,40,.6)';cg.lineWidth=major?2:1;cg.beginPath();
+  marching(F,N,lv,(a,b,c2,d)=>{cg.moveTo((a+.5)*sc,(b+.5)*sc);cg.lineTo((c2+.5)*sc,(d+.5)*sc)});cg.stroke()}
+ L.imageOverlay(cc.toDataURL(),bounds,{interactive:false}).addTo(gCont);S.contCv=cc;
+}
+const gridLL=(A,gx,gy)=>A.toLL(-A.half+(gx+.5)*A.c,A.half-(gy+.5)*A.c);
+function render(){
+ const{A,C,P,segs,SG,bands}=S.result;const N=A.N;const bounds=[[A.s,A.w],[A.n,A.e]];
+ gProb.clearLayers();gRings.clearLayers();gSeg.clearLayers();gFeat.clearLayers();
+ // probability overlay
+ const R=1024,cv=document.createElement('canvas');cv.width=cv.height=R;const g=cv.getContext('2d');
+ const hc=document.createElement('canvas');hc.width=hc.height=N;const hg=hc.getContext('2d'),im=hg.createImageData(N,N);
+ const cols=[[179,18,46,165],[232,80,28,140],[244,155,43,110],[248,212,92,85]];
+ for(let k=0;k<N*N;k++){const cc=C[k],b=cc<=.25?0:cc<=.5?1:cc<=.75?2:cc<=.95?3:-1;if(b<0)continue;const q=cols[b],o=k*4;im.data[o]=q[0];im.data[o+1]=q[1];im.data[o+2]=q[2];im.data[o+3]=q[3]}
+ hg.putImageData(im,0,0);g.imageSmoothingEnabled=true;g.drawImage(hc,0,0,R,R);
+ const sc=R/N,lc={.25:['#7A0B1F',3],.5:['#B23A12',2.5],.75:['#B8701A',2],.95:['#9A7C1C',1.8]};
+ bands.forEach(b=>{g.strokeStyle=lc[b.lv][0];g.lineWidth=lc[b.lv][1];g.lineJoin='round';b.lines.forEach(pts=>{g.beginPath();pts.forEach((p,n)=>{const X=(p[0]+.5)*sc,Y=(p[1]+.5)*sc;n?g.lineTo(X,Y):g.moveTo(X,Y)});g.stroke()})});
+ L.imageOverlay(cv.toDataURL(),bounds,{opacity:.9,interactive:false}).addTo(gProb);S.probCv=cv;
  // rings
- const[lx,ly]=toS(S.lkp.x,S.lkp.y);
- if($('lRings').checked){ctx.save();ctx.font=`600 ${11*px}px "IBM Plex Mono",monospace`;
-  R.P.qa.forEach((r,i)=>{ctx.strokeStyle='rgba(27,36,30,.75)';ctx.setLineDash([6*px,5*px]);ctx.lineWidth=1.2*px;ctx.beginPath();ctx.arc(lx,ly,r/v.side*W,0,7);ctx.stroke();
-   const lab=['25%','50%','75%','95%'][i]+' '+fmt(r)+' mi';const tx=lx+r/v.side*W*.7071+3*px,ty=ly-r/v.side*W*.7071;
-   ctx.setLineDash([]);ctx.lineWidth=3*px;ctx.strokeStyle='rgba(255,255,255,.9)';ctx.strokeText(lab,tx,ty);ctx.fillStyle='#1B241E';ctx.fillText(lab,tx,ty)});ctx.restore()}
+ P.qa.forEach((r,n)=>{L.circle(S.lkp,{radius:r*MI,color:'#1B241E',weight:1.6,dashArray:'7 6',fill:false,interactive:false}).addTo(gRings);
+  const ll=L.latLng(S.lkp.lat+r*.7071/69,S.lkp.lng+r*.7071/(69.172*Math.cos(S.lkp.lat*Math.PI/180)));
+  L.marker(ll,{icon:L.divIcon({className:'seglab',html:['25%','50%','75%','95%'][n]+' · '+fmt(r)+' mi',iconSize:[90,14],iconAnchor:[-4,7]}),interactive:false}).addTo(gRings)});
  // segments
- if($('lSeg').checked){ctx.save();ctx.strokeStyle='rgba(27,36,30,.45)';ctx.lineWidth=1*px;const SG=R.SG,st=W/SG;ctx.beginPath();
-  for(let n=1;n<SG;n++){ctx.moveTo(n*st,0);ctx.lineTo(n*st,W);ctx.moveTo(0,n*st);ctx.lineTo(W,n*st)}ctx.stroke();
-  ctx.font=`600 ${10.5*px}px "IBM Plex Mono",monospace`;ctx.textBaseline='top';
-  for(let sj=0;sj<SG;sj++)for(let si=0;si<SG;si++){const t=String.fromCharCode(65+si)+(sj+1);ctx.lineWidth=3*px;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.strokeText(t,si*st+4*px,sj*st+4*px);ctx.fillStyle='#1B241E';ctx.fillText(t,si*st+4*px,sj*st+4*px)}ctx.restore()}
- // heading
- if(R.P.head){ctx.save();const L=R.P.qa[1]/v.side*W;ctx.strokeStyle='#1B241E';ctx.lineWidth=2*px;ctx.beginPath();ctx.moveTo(lx,ly);const ex=lx+Math.sin(R.P.head.b)*L,ey=ly-Math.cos(R.P.head.b)*L;ctx.lineTo(ex,ey);ctx.stroke();
-  ctx.beginPath();const a=R.P.head.b;ctx.moveTo(ex,ey);ctx.lineTo(ex-Math.sin(a-.4)*9*px,ey+Math.cos(a-.4)*9*px);ctx.lineTo(ex-Math.sin(a+.4)*9*px,ey+Math.cos(a+.4)*9*px);ctx.closePath();ctx.fillStyle='#1B241E';ctx.fill();ctx.restore()}
- // LKP
- ctx.save();ctx.beginPath();ctx.arc(lx,ly,8*px,0,7);ctx.fillStyle='#D9531E';ctx.fill();ctx.lineWidth=2.5*px;ctx.strokeStyle='#FFFFFF';ctx.stroke();ctx.beginPath();ctx.arc(lx,ly,2.5*px,0,7);ctx.fillStyle='#FFFFFF';ctx.fill();
- ctx.font=`700 ${14*px}px "Barlow Condensed",sans-serif`;ctx.lineWidth=3.5*px;ctx.strokeStyle='#FFFFFF';ctx.strokeText('LKP',lx+11*px,ly+5*px);ctx.fillStyle='#1B241E';ctx.fillText('LKP',lx+11*px,ly+5*px);ctx.restore();
- // scale bar + north
- ctx.save();const target=v.side/5,opts=[.05,.1,.25,.5,1,2,5,10];const len=opts.reduce((a,b)=>Math.abs(b-target)<Math.abs(a-target)?b:a);const lp=len/v.side*W;
- const bx=14*px,by=W-18*px;ctx.fillStyle='rgba(255,255,255,.88)';ctx.fillRect(bx-6*px,by-20*px,lp+70*px,28*px);
- ctx.fillStyle='#1B241E';ctx.fillRect(bx,by,lp,4*px);ctx.fillStyle='#FFFFFF';ctx.fillRect(bx+lp/2,by+1*px,lp/2-1*px,2*px);
- ctx.fillStyle='#1B241E';ctx.font=`500 ${11*px}px "IBM Plex Mono",monospace`;ctx.fillText(len+' mi',bx+lp+6*px,by+5*px);
- if(T.iv){ctx.fillText('Contours '+T.iv+' ft',bx,by-7*px)}
- const nx=W-24*px,ny=26*px;ctx.beginPath();ctx.moveTo(nx,ny-14*px);ctx.lineTo(nx+7*px,ny+6*px);ctx.lineTo(nx,ny+2*px);ctx.lineTo(nx-7*px,ny+6*px);ctx.closePath();ctx.fillStyle='#1B241E';ctx.fill();
- ctx.font=`700 ${13*px}px "Barlow Condensed",sans-serif`;ctx.textAlign='center';ctx.fillText('N',nx,ny+20*px);ctx.restore();
- if(S.mode==='osm'){ctx.save();ctx.font=`500 ${10*px}px "IBM Plex Sans",sans-serif`;const t='© OpenStreetMap contributors';const tw=ctx.measureText(t).width;
-  ctx.fillStyle='rgba(255,255,255,.85)';ctx.fillRect(W-tw-12*px,W-18*px,tw+12*px,18*px);ctx.fillStyle='#1B241E';ctx.textBaseline='middle';ctx.fillText(t,W-tw-6*px,W-9*px);ctx.restore()}
- if(S.mode==='image'&&!S.img){ctx.fillStyle='rgba(27,36,30,.7)';ctx.font=`500 ${15*px}px "IBM Plex Sans",sans-serif`;ctx.textAlign='center';ctx.fillText('Load a map image to begin',W/2,W/2-30*px)}
+ const sq=S.result.grid.type==='squares';
+ segs.forEach(s=>{const poly=L.polygon(s.pts,{color:sq?'#1B241E':'#FFFFFF',weight:s.rank<=3?3:sq?.8:1.6,opacity:sq?.6:.95,fill:true,fillOpacity:0,bubblingMouseEvents:false});
+  poly.bindTooltip(`<b>${s.id}</b> · POA ${(s.poa*100).toFixed(1)}% · rank ${s.rank} · ${Math.round(s.acres)} ac`,{sticky:true});poly.addTo(gSeg);
+  L.marker(s.lp,{icon:L.divIcon({className:'gridlab',html:'<span>'+s.id+'</span>',iconSize:[0,0],iconAnchor:[0,0]}),interactive:false}).addTo(gSeg)});
+ renderTerrain(A);
+ // features used by model
+ const fc=document.createElement('canvas');fc.width=fc.height=R;const fg=fc.getContext('2d');
+ const drawLines=(lines,col,wd,dash)=>{fg.strokeStyle=col;fg.lineWidth=wd;fg.setLineDash(dash||[]);lines.forEach(ln=>{fg.beginPath();ln.forEach((p,n)=>{const[gx,gy]=g2(A,p[0],p[1]);n?fg.lineTo(gx*sc,gy*sc):fg.moveTo(gx*sc,gy*sc)});fg.stroke()})};
+ fg.fillStyle='rgba(47,127,193,.45)';for(let k=0;k<N*N;k++)if(A.water[k])fg.fillRect((k%N)*sc,((k/N)|0)*sc,sc+.5,sc+.5);
+ if(P.useDem){fg.strokeStyle='#5FA8E0';fg.lineWidth=1.6;fg.setLineDash([]);A.demSegs.forEach(s=>{fg.beginPath();fg.moveTo((s[0]+.5)*sc,(s[1]+.5)*sc);fg.lineTo((s[2]+.5)*sc,(s[3]+.5)*sc);fg.stroke()})}
+ drawLines(A.lines.stream,'#1F5F99',2.2);drawLines(A.lines.road,'#C23B22',2.6);drawLines(A.lines.trail,'#6B3E12',2,[6,4]);
+ fg.setLineDash([]);fg.fillStyle='#111';A.bld.forEach(p=>{const[gx,gy]=g2(A,p[0],p[1]);fg.fillRect(gx*sc-2,gy*sc-2,4,4)});
+ L.imageOverlay(fc.toDataURL(),bounds,{interactive:false}).addTo(gFeat);S.featCv=fc;
+ // drone visibility tint and blocks
+ const dr=S.result.drone;gDrone.clearLayers();gPod.clearLayers();
+ const pc=document.createElement('canvas');pc.width=pc.height=N;const pg=pc.getContext('2d'),pim=pg.createImageData(N,N);
+ for(let k=0;k<N*N;k++){const v=dr.pod[k],o=k*4;pim.data[o]=0;pim.data[o+1]=150;pim.data[o+2]=210;pim.data[o+3]=Math.round(Math.min(1,v)*170)}
+ pg.putImageData(pim,0,0);const pc2=document.createElement('canvas');pc2.width=pc2.height=512;const p2=pc2.getContext('2d');p2.imageSmoothingEnabled=true;p2.drawImage(pc,0,0,512,512);
+ L.imageOverlay(pc2.toDataURL(),bounds,{interactive:false}).addTo(gPod);S.podCv=pc2;
+ dr.blocks.forEach(b=>{L.rectangle([b.se,b.nw],{color:'#0093C4',weight:3,fill:true,fillColor:'#00A3D9',fillOpacity:.1})
+   .bindTooltip(`<b>${b.name}</b> · POA ${(b.p*100).toFixed(1)}% · POD ${Math.round(b.pod*100)}% · ${Math.round(b.acres)} ac`,{sticky:true}).addTo(gDrone);
+  L.marker([b.nw[0],b.nw[1]],{icon:L.divIcon({className:'dronelab',html:b.name,iconSize:[38,18],iconAnchor:[-4,-4]}),interactive:false}).addTo(gDrone)});
 }
 const fmt=r=>r<1?r.toFixed(2):r.toFixed(1);
-
-// ---------- report ----------
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function report(){
- const R=S.result,P=R.P;const u=P.urg;const lvl=u>=7?['Critical','var(--crit)']:u>=5?['High','var(--crit)']:u>=3?['Elevated','var(--warn)']:['Moderate','var(--ok)'];
+ const{P,A,segs,distMass}=S.result;const u=P.urg;
+ const lvl=u>=7?['Critical','var(--crit)']:u>=5?['High','var(--crit)']:u>=3?['Elevated','var(--warn)']:['Moderate','var(--ok)'];
  $('urg').querySelector('i').style.background=lvl[1];$('urg').querySelector('span').textContent='Urgency: '+lvl[0];
  const rows=[['Subject',($('name').value||'Unnamed')+', age '+P.age],['Category',P.cat.label],['Medical',P.meds.length?P.meds.map(m=>m.label).join('; '):'None entered'],
-  ['LKP',$('lkpNote').value||'—'],...(S.mode==='osm'?[['LKP coords',w2ll(S.lkp.x,S.lkp.y).map(v=>v.toFixed(5)).join(', ')]]:[]),['Time since LKP',P.hours+' h'],['Conditions',P.wx.t+(P.night?', after dark':'')],
-  ['Rings (mi)',P.qa.map(fmt).join(' / ')],['Adjustment','× '+P.scale.toFixed(2)+' of category distances']];
- if(P.head)rows.splice(6,0,['Direction',Math.round(+$('heading').value)+'°']);
+  ['LKP',$('lkpNote').value||'—'],['LKP lat, long',S.lkp.lat.toFixed(5)+', '+S.lkp.lng.toFixed(5)],['LKP USNG',usng(S.lkp.lat,S.lkp.lng)],
+  ['Time since LKP',P.hours+' h'],['Conditions',P.wx.t+(P.night?', after dark':'')]];
+ if(P.head)rows.push(['Direction',Math.round(+$('heading').value)+'° true']);
+ rows.push(['Rings (mi)',P.qa.map(fmt).join(' / ')],['Adjustment','× '+P.scale.toFixed(2)+' of category distances']);
  $('summary').innerHTML=rows.map(r=>`<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('');
- const top=R.segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,8);const mx=top[0].poa;
- $('segBody').innerHTML=top.map(s=>`<tr><td><b>${s.id}</b></td><td class="num">${(s.poa*100).toFixed(1)}%</td><td class="num">${s.area.toFixed(2)}</td><td class="num">${(s.poa*100/s.area).toFixed(1)}</td><td><div class="bar" style="width:${(s.poa/mx*100).toFixed(0)}%"></div></td></tr>`).join('');
- const notes=P.cat.notes.concat(P.meds.map(m=>m.note));
- if(P.night||P.wx.u>=2)notes.push('Thermal drone flights are most effective now: a cold background makes a warm subject stand out.');
- if(P.hours<1)notes.push('Early in the incident: rings are shrunk to reflect limited travel time. Prioritize hasty search of the LKP area and travel routes.');
+ const GR=S.result.grid,top=segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,12),mx=top[0].poa||1;
+ $('gridSum').textContent=`${segs.length} ${GR.type==='squares'?'squares':'segments'}${GR.type==='squares'?'':' out to '+(P.grid.rings[P.grid.rings.length-1]<1?Math.round(P.grid.rings[P.grid.rings.length-1]*MI)+' m':fmt(P.grid.rings[P.grid.rings.length-1])+' mi')} cover ${Math.round(GR.inside*100)}% of the probability. Tap a row to zoom.`+(P.grid.err?' '+P.grid.err:'');
+ $('segBody').innerHTML=top.map(s=>`<tr class="segrow" data-id="${s.id}"><td><b>${s.id}</b></td><td class="num">${(s.poa*100).toFixed(1)}%</td><td class="num">${Math.round(s.acres)}</td><td class="num">${(s.poa*100/s.acres*100).toFixed(1)}</td><td><div class="bar" style="width:${(s.poa/mx*100).toFixed(0)}%"></div></td></tr>`).join('');
+ const dr=S.result.drone,D=P.drone;
+ $('droneSum').textContent=`${SENSOR_LABEL[D.sensor]}, ${D.light==='day'?'daylight':'darkness'}, leaves ${D.leaves}. Canopy: ${dr.src||'not loaded (assumed moderate)'}. Flying all ${dr.blocks.length} blocks: about ${Math.round(dr.pos*100)}% estimated chance of detection (POS). Tap a row to zoom.`;
+ const dmx=dr.blocks.length?dr.blocks[0].v:1;
+ $('droneBody').innerHTML=dr.blocks.map(b=>`<tr class="dronerow" data-id="${b.name}"><td><b>${b.name}</b></td><td class="num">${(b.p*100).toFixed(1)}%</td><td class="num">${Math.round(b.pod*100)}%</td><td class="num">${Math.round(b.acres)}</td><td class="num">${Math.round(b.canopy*100)}%</td><td class="num">${b.flights}</td><td><div class="dronebar" style="width:${(b.v/dmx*100).toFixed(0)}%"></div></td></tr>`).join('');
+ $('groundHint').textContent=dr.ground.length?'Better for ground teams (high probability, poor drone visibility): '+dr.ground.map(s=>`${s.id} (POD ${Math.round(s.pod*100)}%)`).join(', ')+'.':'Drones can see reasonably well across the top segments.';
+ const notes=P.cat.notes.concat(P.meds.map(m=>m.note),droneNotes(P,dr));
+ if(P.hours<1)notes.push('Early in the incident: rings are shrunk to reflect limited travel time. Prioritize a hasty search of the LKP area and travel routes.');
  $('notes').innerHTML=notes.map(n=>`<li>${esc(n)}</li>`).join('');
- const mw=$('massWarn');if(R.distMass<.9){mw.hidden=false;mw.textContent=`About ${Math.round((1-R.distMass)*100)}% of the distance model falls outside this map. `+(S.mode==='image'?'Use a wider map image.':'Tap Center map on LKP.')}else mw.hidden=true;
+ const warns=A.warn.slice();if(distMass<.9)warns.push(`About ${Math.round((1-distMass)*100)}% of the distance model falls outside the loaded area. Press Run analysis to reload around the LKP.`);
+ $('dataWarn').hidden=!warns.length;$('dataWarn').textContent=warns.join(' ');
 }
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-$('copy').addEventListener('click',()=>{const R=S.result,P=R.P;
- const top=R.segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,8);
- const txt=['SAR PROBABILITY SUMMARY',...[...$('summary').querySelectorAll('dt')].map(dt=>dt.textContent+': '+dt.nextElementSibling.textContent),
-  $('urg').textContent.trim(),'','Top segments (POA):',...top.map(s=>`  ${s.id}  ${(s.poa*100).toFixed(1)}%`),'','Notes:',...[...$('notes').children].map(li=>'- '+li.textContent)].join('\n');
- const ok=()=>{$('copyMsg').textContent='Copied to clipboard'};
- try{navigator.clipboard.writeText(txt).then(ok,()=>{$('copyMsg').textContent='Copy was blocked by the browser'})}catch(e){$('copyMsg').textContent='Copy was blocked by the browser'}});
+$('droneBody').addEventListener('click',e=>{const tr=e.target.closest('tr[data-id]');if(!tr)return;const b=S.result.drone.blocks.find(x=>x.name===tr.dataset.id);if(b)map.fitBounds([b.se,b.nw],{padding:[30,30]})});
+$('segBody').addEventListener('click',e=>{const tr=e.target.closest('tr[data-id]');if(!tr)return;const s=S.result.segs.find(x=>x.id===tr.dataset.id);if(s)map.fitBounds(L.latLngBounds(s.pts),{padding:[30,30]})});
 
-// ---------- interaction ----------
-let t0=null;function schedule(){clearTimeout(t0);t0=setTimeout(compute,60)}
-document.querySelectorAll('.rail input,.rail select').forEach(el=>{if(el.id!=='imgFile'&&el.id!=='goTo')el.addEventListener('input',schedule)});
-catSel.addEventListener('change',()=>{setQ();schedule()});
-$('age').addEventListener('change',()=>{const a=+$('age').value;const c=CATS.find(c=>c.ages&&a>=c.ages[0]&&a<=c.ages[1]);if(c&&catSel.value!==c.id){catSel.value=c.id;setQ();schedule()}});
-$('resetQ').addEventListener('click',()=>{setQ();schedule()});
-['lHeat','lRings','lSeg','lCont'].forEach(id=>$(id).addEventListener('change',draw));
-const hints={lkp:'Tool: place last known point',road:'Tool: drag to draw a road',trail:'Tool: drag to draw a trail',stream:'Tool: drag to draw a stream or drainage',water:'Tool: drag to paint water',building:'Tool: tap to add a building'};
-$('tools').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.tool=b.dataset.tool;
- [...$('tools').children].forEach(x=>x.setAttribute('aria-pressed',x===b));$('toolHint').textContent=hints[S.tool]});
-function world(e){const r=cv.getBoundingClientRect(),v=S.result.v;return[v.cx-v.side/2+(e.clientX-r.left)/r.width*v.side,v.cy+v.side/2-(e.clientY-r.top)/r.height*v.side]}
-cv.addEventListener('pointerdown',e=>{if(!S.result)return;const[x,y]=world(e);
- if(S.tool==='lkp'){S.lkp={x,y};compute();return}
- if(S.tool==='building'){S.user.push({t:'building',pts:[[x,y]]});compute();return}
- cv.setPointerCapture(e.pointerId);
- S.drawing={t:S.tool,pts:S.tool==='water'?[[x,y,S.result.v.side/45]]:[[x,y]]};draw()});
-cv.addEventListener('pointermove',e=>{if(!S.drawing)return;const[x,y]=world(e);const pts=S.drawing.pts,l=pts[pts.length-1],v=S.result.v;
- if(Math.hypot(x-l[0],y-l[1])>v.side/250){pts.push(S.drawing.t==='water'?[x,y,v.side/45]:[x,y]);draw()}});
-const endDraw=()=>{if(!S.drawing)return;if(S.drawing.pts.length>1||S.drawing.t==='water')S.user.push(S.drawing);S.drawing=null;compute()};
-cv.addEventListener('pointerup',endDraw);cv.addEventListener('pointercancel',endDraw);
-$('undo').addEventListener('click',()=>{S.user.pop();compute()});
-$('clearDraw').addEventListener('click',()=>{S.user=[];compute()});
-$('recenter').addEventListener('click',()=>{if(S.mode!=='image'){S.center={...S.lkp};if(S.mode==='osm'&&S.feat&&!S.feat.data)S.feat=null;S.tcache=null;compute()}});
-function setMode(m){S.mode=m;$('modeOsm').setAttribute('aria-pressed',m==='osm');$('modeSample').setAttribute('aria-pressed',m==='sample');$('modeImage').setAttribute('aria-pressed',m==='image');
- $('imgControls').hidden=m!=='image';$('osmControls').hidden=m!=='osm';$('osmAttr').hidden=m!=='osm';$('recenter').hidden=m==='image';S.user=[];
- if(m!=='osm')status('');
- if(m==='image'||m==='osm'){S.lkp={x:0,y:0};S.center={x:0,y:0}}else{S.lkp={x:.2,y:yR1(.2)+.045};S.center={...S.lkp}}S.tcache=null;compute()}
-function setOrigin(lat,lon){S.origin={lat,lon};S.feat=null;if(S.mode!=='osm')setMode('osm');else{S.lkp={x:0,y:0};S.center={x:0,y:0};S.user=[];S.tcache=null;compute()}}
-async function goTo(){const q=$('goTo').value.trim();if(!q)return;
- const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);
- if(m){const la=+m[1],lo=+m[2];if(Math.abs(la)<=90&&Math.abs(lo)<=180){setOrigin(la,lo);return}}
- status('Searching…');
- try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));const js=await r.json();
-  if(!js.length){status('No match for that address. Try adding the city and state, or enter coordinates.');return}
-  $('lkpNote').value=q;setOrigin(+js[0].lat,+js[0].lon)}
- catch(e){status('Address search did not respond. Enter coordinates instead.')}}
-$('goBtn').addEventListener('click',goTo);
-$('goTo').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();goTo()}});
-$('myLoc').addEventListener('click',()=>{if(!navigator.geolocation){status('Location is not available in this browser.');return}
- status('Finding your location…');
- navigator.geolocation.getCurrentPosition(p=>{$('lkpNote').value='My location';setOrigin(p.coords.latitude,p.coords.longitude)},
-  ()=>status('Could not get your location. Check location permission for this site.'),{enableHighAccuracy:true,timeout:15000})});
-$('modeOsm').addEventListener('click',()=>setMode('osm'));
-$('modeSample').addEventListener('click',()=>setMode('sample'));
-$('modeImage').addEventListener('click',()=>setMode('image'));
-$('imgFile').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{S.img=im;S.tcache=null;S.lkp={x:0,y:0};compute()};im.src=r.result};r.readAsDataURL(f)});
-$('imgW').addEventListener('input',()=>{S.tcache=null});
-window.addEventListener('resize',()=>{clearTimeout(t0);t0=setTimeout(draw,80)});
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>draw());
-compute();
+// ================= exports =================
+function exportShapes(){
+ const{A,P,segs,bands}=S.result;const out=[];
+ out.push({kind:'point',name:'LKP',desc:`${$('lkpNote').value} · USNG ${usng(S.lkp.lat,S.lkp.lng)}`,coords:[[S.lkp.lng,S.lkp.lat]]});
+ const bandName={.25:'Top 25% probability',.5:'Top 50% probability',.75:'Top 75% probability',.95:'Top 95% probability'};
+ bands.forEach(b=>b.lines.forEach(pts=>{const co=pts.map(p=>{const[la,lo]=gridLL(A,p[0],p[1]);return[lo,la]});const closed=Math.hypot(pts[0][0]-pts[pts.length-1][0],pts[0][1]-pts[pts.length-1][1])<1e-3;
+  out.push({kind:closed?'polygon':'line',name:bandName[b.lv],band:b.lv,coords:co})}));
+ const cos=Math.cos(S.lkp.lat*Math.PI/180);
+ P.qa.forEach((r,n)=>{const co=[];for(let a=0;a<=72;a++){const t=a/72*2*Math.PI;co.push([S.lkp.lng+r*Math.sin(t)/(69.172*cos),S.lkp.lat+r*Math.cos(t)/69])}
+  out.push({kind:'line',name:['25%','50%','75%','95%'][n]+' distance ring ('+fmt(r)+' mi)',ring:true,coords:co})});
+ S.result.drone.blocks.forEach(b=>{const[n0,w0]=b.nw,[s0,e0]=b.se;out.push({kind:'polygon',drone:true,name:`${b.name} drone block (POA ${(b.p*100).toFixed(1)}%, POD ${Math.round(b.pod*100)}%)`,desc:`${SENSOR_LABEL[P.drone.sensor]} · ${Math.round(b.acres)} acres · canopy ${Math.round(b.canopy*100)}% · about ${b.flights} battery flight${b.flights>1?'s':''}`,poa:b.p,pod:b.pod,id:b.name,coords:[[w0,n0],[e0,n0],[e0,s0],[w0,s0],[w0,n0]]})});
+ const ranked=segs.slice().sort((a,b)=>b.poa-a.poa);
+ ranked.forEach(s=>{const co=s.pts.map(q=>[q[1],q[0]]);co.push(co[0]);out.push({kind:'polygon',seg:true,name:`${s.id} (rank ${s.rank}, POA ${(s.poa*100).toFixed(1)}%)`,desc:`POA ${(s.poa*100).toFixed(2)}% · ${Math.round(s.acres)} acres · ${s.desc}`,poa:s.poa,rank:s.rank,id:s.id,lp:s.lp,acres:s.acres,coords:co})});
+ return out}
+// Saves a file. Inside a claude.ai artifact this goes through the viewer's save prompt; anywhere else it is a normal browser download.
+async function saveBlob(name,blob){
+ try{if(window.claude&&typeof window.claude.use==='function'){const d=await window.claude.use('downloads');if(d){await d.save({filename:name,data:blob});return true}}}
+ catch(e){return false}
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);return true}
+function download(name,text,type){return saveBlob(name,new Blob([text],{type}))}
+// ---- version control: every export carries a version number and local date/time ----
+// Same analysis = same version in every format. Any change to the inputs or results bumps it. Numbering is kept per subject name/ID in this browser.
+const pad=n=>String(n).padStart(2,'0');
+const verLabel=v=>'v'+pad(v.n);
+const prettyTime=t=>new Date(t).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+function analysisSig(){const{P,segs}=S.result;return JSON.stringify([S.lkp.lat.toFixed(5),S.lkp.lng.toFixed(5),$('lkpNote').value,P.cat.id,P.age,P.meds.map(m=>m.id),P.hours,P.wx.t,P.night,P.head?+$('heading').value:null,P.qa.map(v=>v.toFixed(2)),P.drone,P.grid,segs.map(s=>Math.round(s.poa*1000)),S.user.length])}
+const verKey=()=>'sar-version:'+(($('name').value||'incident').trim().toLowerCase());
+const memVer={};
+function readVer(){const k=verKey();let v=null;try{v=JSON.parse(localStorage.getItem(k))}catch(e){}return v||memVer[k]||null}
+function writeVer(v){const k=verKey();memVer[k]=v;try{v?localStorage.setItem(k,JSON.stringify(v)):localStorage.removeItem(k)}catch(e){}}
+function exportVersion(){const sig=analysisSig();let v=readVer()||{n:0,sig:''};if(v.sig!==sig)v={n:v.n+1,sig,at:Date.now()};writeVer(v);updateVerHint();return v}
+function updateVerHint(){const v=readVer();$('verHint').textContent=v?`Last export: ${verLabel(v)}, ${prettyTime(v.at)}. A changed analysis gets the next number.`:'Exports are numbered v01, v02… for this subject. A changed analysis gets the next number.'}
+$('verReset').onclick=()=>{writeVer(null);delete memVer[verKey()];updateVerHint();$('verHint').textContent='Numbering restarted. The next export is v01.'};
+$('name').addEventListener('input',updateVerHint);
+function fileStem(v){const d=new Date(v.at);return 'sar-'+(($('name').value||'incident').replace(/[^a-z0-9]+/gi,'-').toLowerCase().replace(/^-|-$/g,''))+'-'+verLabel(v)+'-'+d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'-'+pad(d.getHours())+pad(d.getMinutes())}
+updateVerHint();
+$('kmlBtn').onclick=()=>{if(!S.result)return;const ver=exportVersion(),stem=fileStem(ver);const sh=exportShapes();const x=s=>String(s).replace(/[<&>]/g,c=>({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+ const cs=c=>c.map(p=>p[0].toFixed(6)+','+p[1].toFixed(6)+',0').join(' ');
+ const style=`<Style id="lkp"><IconStyle><color>ff1e53d9</color><scale>1.2</scale></IconStyle></Style>
+<Style id="b25"><LineStyle><color>ff1f0b7a</color><width>3</width></LineStyle><PolyStyle><color>662e12b3</color></PolyStyle></Style>
+<Style id="b50"><LineStyle><color>ff123ab2</color><width>2.5</width></LineStyle><PolyStyle><color>441c50e8</color></PolyStyle></Style>
+<Style id="b75"><LineStyle><color>ff1a70b8</color><width>2</width></LineStyle><PolyStyle><color>332b9bf4</color></PolyStyle></Style>
+<Style id="b95"><LineStyle><color>ff1c7c9a</color><width>2</width></LineStyle><PolyStyle><color>225cd4f8</color></PolyStyle></Style>
+<Style id="ring"><LineStyle><color>cc1e241b</color><width>1.5</width></LineStyle></Style>
+<Style id="drone"><LineStyle><color>ffc49300</color><width>3</width></LineStyle><PolyStyle><color>33d9a300</color></PolyStyle></Style>
+<Style id="seg"><LineStyle><color>ff1e241b</color><width>1</width></LineStyle><PolyStyle><color>00ffffff</color></PolyStyle></Style>`;
+ const pm=s=>{const st=s.kind==='point'?'lkp':s.drone?'drone':s.seg?'seg':s.ring?'ring':'b'+Math.round(s.band*100);const geo=s.kind==='point'?`<Point><coordinates>${cs(s.coords)}</coordinates></Point>`:s.kind==='line'?`<LineString><tessellate>1</tessellate><coordinates>${cs(s.coords)}</coordinates></LineString>`:`<Polygon><outerBoundaryIs><LinearRing><coordinates>${cs(s.coords)}</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+  return `<Placemark><name>${x(s.name)}</name>${s.desc?`<description>${x(s.desc)}</description>`:''}<styleUrl>#${st}</styleUrl>${geo}</Placemark>`};
+ const folder=(n,arr)=>`<Folder><name>${n}</name>${arr.map(pm).join('\n')}</Folder>`;
+ const kml=`<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${x(stem)}</name><description>${x(verLabel(ver)+' · prepared '+prettyTime(ver.at))}</description>${style}
+${pm(sh[0])}
+${folder('Probability bands',sh.filter(s=>s.band))}
+${folder('Distance rings',sh.filter(s=>s.ring))}
+${folder('Drone search blocks',sh.filter(s=>s.drone))}
+${folder('Search grid (by priority)',sh.filter(s=>s.seg))}
+</Document></kml>`;
+ download(stem+'.kml',kml,'application/vnd.google-earth.kml+xml')};
+$('gjBtn').onclick=()=>{if(!S.result)return;const ver=exportVersion(),stem=fileStem(ver);const sh=exportShapes();
+ const fc={type:'FeatureCollection',metadata:{name:stem,version:ver.n,prepared:new Date(ver.at).toISOString(),subject:$('name').value},features:sh.map(s=>({type:'Feature',properties:{name:s.name,description:s.desc||'',...(s.seg?{segment:s.id,poa:+(s.poa*100).toFixed(2)}:{}),...(s.drone?{drone_block:s.id,poa:+(s.poa*100).toFixed(2),pod:+(s.pod*100).toFixed(0)}:{}),...(s.band?{band:s.band}:{})},
+  geometry:s.kind==='point'?{type:'Point',coordinates:s.coords[0]}:s.kind==='line'?{type:'LineString',coordinates:s.coords}:{type:'Polygon',coordinates:[s.coords]}}))};
+ download(stem+'.geojson',JSON.stringify(fc),'application/geo+json')};
+$('copyBtn').onclick=()=>{if(!S.result)return;const{segs}=S.result;const top=segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,10);
+ const ver=exportVersion();
+ const txt=['SAR PROBABILITY SUMMARY · '+verLabel(ver).toUpperCase()+' · prepared '+prettyTime(ver.at),...[...$('summary').querySelectorAll('dt')].map(dt=>dt.textContent+': '+dt.nextElementSibling.textContent),$('urg').textContent.trim(),'','Top segments (POA):',...top.map(s=>`  ${s.id}  ${(s.poa*100).toFixed(1)}%`),'','Drone blocks ('+$('droneSum').textContent.split('. Tap')[0]+'):',...S.result.drone.blocks.map(b=>`  ${b.name}  POA ${(b.p*100).toFixed(1)}%  POD ${Math.round(b.pod*100)}%  ${Math.round(b.acres)} ac  ~${b.flights} flight(s)`),'','Notes:',...[...$('notes').children].map(li=>'- '+li.textContent)].join('\n');
+ navigator.clipboard.writeText(txt).then(()=>$('copyMsg').textContent='Copied',()=>$('copyMsg').textContent='Copy was blocked by the browser')};
+
+// ================= ATAK data package =================
+// Same format as the LKP Search Grid tool: a mission package of CoT drawing shapes (u-d-f), each a separate, editable ATAK shape
+// that can be renamed, recolored and given remarks in ATAK. ESRI shapefiles import into ATAK as read-only overlays, so they are not used here.
+function atakUid(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16)})}
+function atakColor(hex,a){const v=((a<<24)|parseInt(hex.replace('#',''),16))>>>0;return v>2147483647?v-4294967296:v}
+function cotEvent(id,type,lat,lon,detail,time,stale){
+ return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><event version="2.0" uid="${id}" type="${type}" time="${time}" start="${time}" stale="${stale}" how="h-e"><point lat="${lat.toFixed(7)}" lon="${lon.toFixed(7)}" hae="9999999.0" ce="9999999.0" le="9999999.0"/><detail>${detail}</detail></event>`}
+function atakFiles(ver){
+ const sh=exportShapes(),now=new Date(),time=now.toISOString(),stale=new Date(now.getTime()+365*864e5).toISOString(),files=[];
+ const tag=(($('name').value||'sar').replace(/[^a-z0-9]+/gi,'-').toLowerCase().slice(0,20))+'-'+verLabel(ver),head=($('name').value||'Subject')+' · '+verLabel(ver)+' '+prettyTime(ver.at);
+ const shape=(o)=>{const id='spm-'+tag+'-'+o.key+'-'+atakUid().slice(0,8);
+  const links=o.coords.map(q=>`<link point="${q[1].toFixed(7)},${q[0].toFixed(7)}"/>`).join('');
+  const det=`${links}<strokeColor value="${atakColor(o.color,255)}"/><strokeWeight value="${o.weight.toFixed(1)}"/>${o.dash?'<strokeStyle value="dashed"/>':''}<fillColor value="${atakColor(o.color,o.fill)}"/><contact callsign="${esc(o.name)}"/><remarks>${esc(head+' · '+o.remarks)}</remarks><archive/><labels_on value="${o.labels?'true':'false'}"/>`;
+  files.push({id,xml:cotEvent(id,'u-d-f',o.at[0],o.at[1],det,time,stale)})};
+ const mid=c=>{let a=0,b=0;c.forEach(q=>{a+=q[1];b+=q[0]});return[a/c.length,b/c.length]};
+ if($('incGrid').checked)sh.filter(s=>s.seg).forEach(s=>{const c=s.rank<=3?'#B3122E':s.rank<=8?'#E8501C':'#F49B2B';
+  shape({key:s.id,name:s.id,coords:s.coords,at:s.lp,color:c,fill:s.rank<=3?90:s.rank<=8?55:25,weight:3,labels:true,
+   remarks:`Search grid segment ${s.id} · priority rank ${s.rank} · POA ${(s.poa*100).toFixed(2)}% · ${Math.round(s.acres)} acres · ${s.desc.split(' · ').pop()}`})});
+ if($('incDrone').checked)sh.filter(s=>s.drone).forEach(s=>shape({key:s.id,name:s.id,coords:s.coords,at:mid(s.coords.slice(0,4)),color:'#00A3D9',fill:45,weight:4,labels:true,
+   remarks:`Drone block ${s.id} · POA ${(s.poa*100).toFixed(1)}% · POD ${Math.round(s.pod*100)}% · ${s.desc}`}));
+ if($('incBands').checked){const bc={.25:'#B3122E',.5:'#E8501C',.75:'#F49B2B',.95:'#F8D45C'},cnt={};
+  sh.filter(s=>s.band).forEach(s=>{const k=Math.round(s.band*100);cnt[k]=(cnt[k]||0)+1;
+   shape({key:'p'+k+'-'+cnt[k],name:`Top ${k}% area`+(cnt[k]>1?' '+cnt[k]:''),coords:s.coords,at:s.coords[0].slice().reverse(),color:bc[s.band],fill:0,weight:k===25?4:3,labels:false,
+    remarks:`Probability area: the subject is in this area with about ${k}% probability (model estimate)`})})}
+ if($('incRings').checked)sh.filter(s=>s.ring).forEach((s,n)=>{const lab=['25%','50%','75%','95%'][n];
+  shape({key:'ring'+lab.replace('%',''),name:lab+' ring',coords:s.coords,at:[S.lkp.lat,S.lkp.lng],color:'#FFD23F',fill:0,weight:2.5,dash:true,labels:false,remarks:s.name})});
+ const lid='spm-'+tag+'-LKP-'+atakUid().slice(0,8);
+ files.push({id:lid,xml:cotEvent(lid,'b-m-p-s-m',S.lkp.lat,S.lkp.lng,`<contact callsign="LKP"/><color argb="${atakColor('#D9531E',255)}"/><remarks>${esc(head+' · Last known point: '+($('lkpNote').value||'')+' · USNG '+usng(S.lkp.lat,S.lkp.lng))}</remarks><archive/>`,time,stale)});
+ return files}
+$('atakBtn').onclick=async()=>{
+ if(!S.result){$('atakMsg').textContent='Run an analysis first.';return}
+ if(!window.JSZip){$('atakMsg').textContent='The packaging library did not load. Check the connection and reload, or use Download KML.';return}
+ const ver=exportVersion(),stem=fileStem(ver),files=atakFiles(ver),z=new JSZip();
+ files.forEach(f=>z.file(f.id+'/'+f.id+'.cot',f.xml));
+ z.file('MANIFEST/manifest.xml',`<MissionPackageManifest version="2"><Configuration><Parameter name="uid" value="${atakUid()}"/><Parameter name="name" value="${esc(stem)}"/><Parameter name="onReceiveDelete" value="false"/></Configuration><Contents>${files.map(f=>`<Content ignore="false" zipEntry="${f.id}/${f.id}.cot"><Parameter name="uid" value="${f.id}"/></Content>`).join('')}</Contents></MissionPackageManifest>`);
+ const blob=await z.generateAsync({type:'blob'});
+ if(await saveBlob(stem+'-ATAK.zip',blob))$('atakMsg').textContent=`Saved ${stem}-ATAK.zip: ${files.length} items. Import it in ATAK.`;
+};
+
+// ================= one-page briefing (print, JPEG, PDF) =================
+const PR={ink:'#1B241E',muted:'#5C6A60',line:'#CED6CC',accent:'#D9531E',soft:'#FBE7DD',crit:'#B4232A',warn:'#B7791F',ok:'#2F7A4A'};
+const FD='"Barlow Condensed","Arial Narrow",Arial,sans-serif',FB='"IBM Plex Sans",Arial,sans-serif',FM='"IBM Plex Mono",Menlo,Consolas,monospace';
+const urgLevel=u=>u>=7?['Critical',PR.crit]:u>=5?['High',PR.crit]:u>=3?['Elevated',PR.warn]:['Moderate',PR.ok];
+function wrapText(g,t,w){const words=String(t).split(/\s+/);const out=[];let cur='';for(const wd of words){const tst=cur?cur+' '+wd:wd;if(g.measureText(tst).width>w&&cur){out.push(cur);cur=wd}else cur=tst}if(cur)out.push(cur);return out}
+function clipText(g,t,w){t=String(t);if(g.measureText(t).width<=w)return t;while(t.length>1&&g.measureText(t+'…').width>w)t=t.slice(0,-1);return t+'…'}
+function halo(g,t,x,y,wd){g.lineJoin='round';g.lineWidth=wd||5;g.strokeStyle='rgba(255,255,255,.93)';g.strokeText(t,x,y);g.fillText(t,x,y)}
+function rrect(g,x,y,w,h,r){g.beginPath();if(g.roundRect)g.roundRect(x,y,w,h,r);else g.rect(x,y,w,h)}
+
+async function drawBriefMap(g,X,Y,M){
+ const{A,P,segs}=S.result;
+ const[bname,lyr]=Object.entries(bases).find(([,l])=>map.hasLayer(l))||['USGS Topo',bases['USGS Topo']];
+ const maxZ=lyr.options.maxNativeZoom||16;
+ let z=Math.max(3,Math.min(maxZ,Math.ceil(Math.log2(M/(lon2x(A.e,0)-lon2x(A.w,0))))));
+ const fr=z=>({x0:lon2x(A.w,z),x1:lon2x(A.e,z),y0:lat2y(A.n,z),y1:lat2y(A.s,z)});
+ const cnt=f=>(Math.floor(f.x1/256)-Math.floor(f.x0/256)+1)*(Math.floor(f.y1/256)-Math.floor(f.y0/256)+1);
+ const maxT=/openstreetmap|opentopomap/.test(lyr._url)?64:144;
+ let f=fr(z);while(cnt(f)>maxT&&z>3){z--;f=fr(z)}
+ const sx=M/(f.x1-f.x0),sy=M/(f.y1-f.y0);
+ const pj=(la,lo)=>[X+(lon2x(lo,z)-f.x0)*sx,Y+(lat2y(la,z)-f.y0)*sy];
+ g.save();g.beginPath();g.rect(X,Y,M,M);g.clip();g.fillStyle='#E6EAE3';g.fillRect(X,Y,M,M);
+ let fail=0,total=0;const jobs=[];
+ for(let tx=Math.floor(f.x0/256);tx<=Math.floor(f.x1/256);tx++)for(let ty=Math.floor(f.y0/256);ty<=Math.floor(f.y1/256);ty++){total++;
+  const url=lyr._url.replace('{z}',z).replace('{x}',tx).replace('{y}',ty).replace('{s}','a');
+  jobs.push(withTimeout(loadImg(url),15000,'tile').then(im=>{g.drawImage(im,X+(tx*256-f.x0)*sx,Y+(ty*256-f.y0)*sy,256*sx+.7,256*sy+.7)},()=>{fail++}))}
+ await Promise.all(jobs);
+ if(fail===total){g.fillStyle=PR.muted;g.font=`500 26px ${FB}`;g.textAlign='center';g.fillText('Basemap did not load. Overlays only.',X+M/2,Y+M-110);g.textAlign='left'}
+ if(map.hasLayer(gHill)&&S.hillCv&&S.terrainFor===A){g.globalAlpha=.85;g.drawImage(S.hillCv,X,Y,M,M);g.globalAlpha=1}
+ if(map.hasLayer(gCont)&&S.contCv&&S.terrainFor===A)g.drawImage(S.contCv,X,Y,M,M);
+ if(map.hasLayer(gFeat)&&S.featCv)g.drawImage(S.featCv,X,Y,M,M);
+ if(map.hasLayer(gPod)&&S.podCv)g.drawImage(S.podCv,X,Y,M,M);
+ if(map.hasLayer(gProb)&&S.probCv){g.globalAlpha=.9;g.drawImage(S.probCv,X,Y,M,M);g.globalAlpha=1}
+ const[lx,ly]=pj(S.lkp.lat,S.lkp.lng),ppm=M/(2*A.half);
+ const ranked=segs.slice().sort((a,b)=>b.poa-a.poa);
+ if(map.hasLayer(gSeg)){const path=s=>{g.beginPath();s.pts.forEach((q,n)=>{const[x,y]=pj(q[0],q[1]);n?g.lineTo(x,y):g.moveTo(x,y)});g.closePath()};
+  const sq=S.result.grid.type==='squares';
+  segs.forEach(s=>{path(s);if(!sq){g.strokeStyle='rgba(255,255,255,.9)';g.lineWidth=4;g.stroke()}g.strokeStyle='rgba(27,36,30,.75)';g.lineWidth=sq?1.5:1.8;g.stroke()});
+  ranked.slice(0,3).forEach(s=>{path(s);g.strokeStyle='#fff';g.lineWidth=9;g.stroke();g.strokeStyle=PR.ink;g.lineWidth=4.5;g.stroke()});
+  const fs=segs.length>40?16:20;g.font=`600 ${fs}px ${FM}`;g.textBaseline='middle';g.textAlign='center';g.fillStyle=PR.ink;
+  segs.forEach(s=>{const[x,y]=pj(s.lp[0],s.lp[1]);if(s.rank>3)halo(g,s.id,x,y,5)});
+  ranked.slice(0,3).forEach((s,n)=>{const[x,y]=pj(s.lp[0],s.lp[1]);g.font=`700 ${fs+2}px ${FM}`;const tw=g.measureText(s.id).width,bw=tw+46,bh=34;
+   g.fillStyle=PR.ink;rrect(g,x-bw/2,y-bh/2,bw,bh,17);g.fill();g.strokeStyle='#fff';g.lineWidth=3;g.stroke();
+   g.fillStyle=PR.accent;g.beginPath();g.arc(x-bw/2+17,y,12,0,Math.PI*2);g.fill();g.fillStyle='#fff';g.font=`700 18px ${FD}`;g.fillText(String(n+1),x-bw/2+17,y+1);
+   g.font=`700 ${fs+2}px ${FM}`;g.fillText(s.id,x+12,y+1)});g.textAlign='left'}
+ if(map.hasLayer(gDrone))S.result.drone.blocks.forEach(b=>{const[x0,y0]=pj(b.nw[0],b.nw[1]),[x1,y1]=pj(b.se[0],b.se[1]);
+  g.fillStyle='rgba(0,163,217,.12)';g.fillRect(x0,y0,x1-x0,y1-y0);g.strokeStyle='#fff';g.lineWidth=8;g.strokeRect(x0,y0,x1-x0,y1-y0);g.strokeStyle='#0093C4';g.lineWidth=4.5;g.strokeRect(x0,y0,x1-x0,y1-y0);
+  const fs=Math.round(Math.max(13,Math.min(22,(x1-x0)*.22))),pd=fs*.35;g.font=`700 ${fs}px ${FM}`;const tw=g.measureText(b.name).width;g.fillStyle='#00799F';rrect(g,x0+4,y0+4,tw+pd*2,fs*1.35,4);g.fill();g.strokeStyle='#fff';g.lineWidth=1.5;g.stroke();
+  g.fillStyle='#fff';g.textBaseline='middle';g.fillText(b.name,x0+4+pd,y0+4+fs*.7)});
+ if(map.hasLayer(gRings)){g.setLineDash([14,11]);g.lineWidth=2.6;g.strokeStyle='rgba(27,36,30,.85)';
+  P.qa.forEach(r=>{g.beginPath();g.arc(lx,ly,r*ppm,0,Math.PI*2);g.stroke()});g.setLineDash([]);
+  g.font=`600 21px ${FM}`;g.textBaseline='middle';g.fillStyle=PR.ink;
+  P.qa.forEach((r,n)=>halo(g,['25%','50%','75%','95%'][n]+' · '+fmt(r)+' mi',lx+r*ppm*.7071+6,ly-r*ppm*.7071,6))}
+ if(P.head){const Lh=P.qa[1]*ppm,b=P.head.b,ex=lx+Math.sin(b)*Lh,ey=ly-Math.cos(b)*Lh;
+  g.strokeStyle='#fff';g.lineWidth=9;g.beginPath();g.moveTo(lx,ly);g.lineTo(ex,ey);g.stroke();g.strokeStyle=PR.ink;g.lineWidth=4;g.stroke();
+  g.beginPath();g.moveTo(ex+Math.sin(b)*10,ey-Math.cos(b)*10);g.lineTo(ex-Math.sin(b-.45)*26,ey+Math.cos(b-.45)*26);g.lineTo(ex-Math.sin(b+.45)*26,ey+Math.cos(b+.45)*26);g.closePath();g.fillStyle=PR.ink;g.fill()}
+ g.beginPath();g.arc(lx,ly,16,0,Math.PI*2);g.fillStyle=PR.accent;g.fill();g.lineWidth=6;g.strokeStyle='#fff';g.stroke();
+ g.beginPath();g.arc(lx,ly,5,0,Math.PI*2);g.fillStyle='#fff';g.fill();
+ g.font=`700 32px ${FD}`;g.textBaseline='middle';g.fillStyle=PR.ink;halo(g,'LKP',lx+26,ly,7);
+ // scale bar
+ const target=2*A.half/5,len=[.1,.25,.5,1,2,3,5].reduce((a,b)=>Math.abs(b-target)<Math.abs(a-target)?b:a),lp=len*ppm;
+ const lab=(len<1?String(len):len.toFixed(0))+' mi';g.font=`500 22px ${FM}`;const lw=g.measureText(lab).width;
+ g.fillStyle='rgba(255,255,255,.92)';rrect(g,X+18,Y+M-66,lp+lw+52,48,6);g.fill();
+ g.fillStyle=PR.ink;g.fillRect(X+34,Y+M-44,lp,8);g.fillStyle='#fff';g.fillRect(X+34+lp/2,Y+M-42,lp/2-2,4);
+ g.fillStyle=PR.ink;g.textBaseline='middle';g.fillText(lab,X+34+lp+12,Y+M-40);
+ // north arrow
+ const nx=X+M-52,ny=Y+58;g.fillStyle='rgba(255,255,255,.92)';g.beginPath();g.arc(nx,ny+6,36,0,Math.PI*2);g.fill();
+ g.beginPath();g.moveTo(nx,ny-22);g.lineTo(nx+12,ny+10);g.lineTo(nx,ny+3);g.lineTo(nx-12,ny+10);g.closePath();g.fillStyle=PR.ink;g.fill();
+ g.font=`700 22px ${FD}`;g.textAlign='center';g.fillText('N',nx,ny+28);g.textAlign='left';
+ // basemap credit
+ g.font=`400 15px ${FB}`;g.textAlign='right';g.textBaseline='alphabetic';g.fillStyle=PR.ink;halo(g,'Basemap: '+bname,X+M-10,Y+M-10,4);g.textAlign='left';
+ g.restore();
+ g.strokeStyle=PR.ink;g.lineWidth=2;g.strokeRect(X,Y,M,M);
+ return{fail,total};
+}
+
+async function buildSheet(ver){
+ if(!S.result)throw new Error('run an analysis first');
+ try{await Promise.all([`700 40px ${FD}`,`500 20px ${FB}`,`600 20px ${FB}`,`400 20px ${FB}`,`500 20px ${FM}`,`600 20px ${FM}`].map(f=>document.fonts.load(f)))}catch(e){}
+ const W=2200,H=1700,c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+ const{P,A,segs,distMass}=S.result;
+ g.fillStyle='#fff';g.fillRect(0,0,W,H);g.textBaseline='alphabetic';
+ // header band
+ g.fillStyle=PR.ink;g.fillRect(0,0,W,150);g.fillStyle=PR.accent;g.fillRect(0,150,W,8);
+ const[ul,uc]=urgLevel(P.urg);g.font=`700 40px ${FD}`;const ut='URGENCY: '+ul.toUpperCase(),uw=g.measureText(ut).width+56;
+ g.fillStyle=uc;rrect(g,W-50-uw,26,uw,62,8);g.fill();g.fillStyle='#fff';g.fillText(ut,W-50-uw+28,70);
+ g.font=`500 24px ${FB}`;g.fillStyle='#C9D3CB';g.textAlign='right';g.fillText('Prepared '+prettyTime(ver.at),W-50,128);g.textAlign='left';
+ g.font=`700 40px ${FD}`;const vt=verLabel(ver).toUpperCase(),vw=g.measureText(vt).width+40;g.strokeStyle='#fff';g.lineWidth=3;rrect(g,W-50-uw-16-vw,27.5,vw,59,8);g.stroke();g.fillStyle='#fff';g.fillText(vt,W-50-uw-16-vw+20,70);
+ g.fillStyle='#fff';g.font=`700 64px ${FD}`;g.fillText('SAR PROBABILITY MAP',50,80);
+ g.font=`500 30px ${FB}`;g.fillStyle='#C9D3CB';g.fillText(clipText(g,`${$('name').value||'Unnamed'} · ${P.cat.label}, age ${P.age}`,W-uw-vw-200),50,128);
+ // map
+ const MX=50,MY=190,M=1440;const mr=await drawBriefMap(g,MX,MY,M);
+ // right column
+ const CX=MX+M+40,CW=W-50-CX,BOT=MY+M;let y=MY;
+ const sec=t=>{g.textBaseline='alphabetic';g.font=`700 30px ${FD}`;g.fillStyle=PR.accent;g.fillText(t.toUpperCase(),CX,y+26);g.fillStyle=PR.line;g.fillRect(CX,y+38,CW,2);y+=64};
+ sec('Subject and LKP');
+ const rows=[['Subject',($('name').value||'Unnamed')+', age '+P.age],['Category',P.cat.label],['Medical',P.meds.length?P.meds.map(m=>m.label).join('; '):'None entered'],
+  ['LKP',$('lkpNote').value||'—'],['Lat, long',S.lkp.lat.toFixed(5)+', '+S.lkp.lng.toFixed(5),1],['USNG',usng(S.lkp.lat,S.lkp.lng),1],
+  ['Since LKP',P.hours+' h'],['Conditions',P.wx.t+(P.night?', after dark':'')]];
+ if(P.head)rows.push(['Direction',Math.round(+$('heading').value)+'° true',1]);
+ rows.push(['Rings (mi)',P.qa.map(fmt).join(' / '),1]);
+ const LW=150;
+ rows.forEach(([k,v,mono])=>{g.font=`500 20px ${FB}`;g.fillStyle=PR.muted;g.fillText(k,CX,y);
+  g.font=mono?`500 21px ${FM}`:`500 22px ${FB}`;g.fillStyle=PR.ink;const ls=wrapText(g,v,CW-LW).slice(0,3);
+  ls.forEach((l,n)=>g.fillText(l,CX+LW,y+n*29));y+=ls.length*29+9});
+ y+=14;sec('Search priority');
+ g.font=`600 17px ${FB}`;g.fillStyle=PR.muted;g.fillText('RANK',CX,y);g.fillText(S.result.grid.type==='squares'?'SQUARE':'SEG',CX+80,y);g.textAlign='right';g.fillText('POA',CX+270,y);g.fillText('ACRES',CX+380,y);g.textAlign='left';y+=14;
+ const top=segs.slice().sort((a,b)=>b.poa-a.poa).slice(0,6),mx=top[0].poa;
+ top.forEach((s,n)=>{if(n<3){g.fillStyle=PR.soft;g.fillRect(CX,y,CW,36)}g.fillStyle=PR.line;g.fillRect(CX,y+36,CW,1);
+  const by=y+25;g.font=`600 21px ${FM}`;g.fillStyle=PR.ink;g.fillText(String(n+1),CX+8,by);g.font=`700 22px ${FM}`;g.fillText(s.id,CX+80,by);
+  g.font=`500 21px ${FM}`;g.textAlign='right';g.fillText((s.poa*100).toFixed(1)+'%',CX+270,by);g.fillText(String(Math.round(s.acres)),CX+380,by);g.textAlign='left';
+  g.fillStyle=PR.accent;g.fillRect(CX+404,y+13,Math.max(3,(CW-412)*s.poa/mx),10);y+=37});
+ y+=22;
+ g.font=`500 18px ${FB}`;g.textBaseline='middle';let lx=CX;
+ [['#B3122E','Top 25%'],['#E8501C','25–50%'],['#F49B2B','50–75%'],['#F8D45C','75–95%']].forEach(([col,t])=>{g.fillStyle=col;g.fillRect(lx,y-10,22,20);g.fillStyle=PR.ink;g.fillText(t,lx+30,y+1);lx+=30+g.measureText(t).width+24});
+ y+=34;g.textBaseline='alphabetic';
+ g.font=`400 17px ${FB}`;g.fillStyle=PR.muted;g.fillText('Outlined, numbered segments on the map are the top 3.',CX,y);y+=34;
+ const dr=S.result.drone,D=P.drone;
+ if(dr.blocks.length){sec('Drone search blocks');
+  g.font=`500 19px ${FB}`;g.fillStyle=PR.ink;g.fillText(clipText(g,`${SENSOR_LABEL[D.sensor]} · ${D.light==='day'?'daylight':'darkness'} · leaves ${D.leaves} · est. POS ${Math.round(dr.pos*100)}%`,CW),CX,y);y+=30;
+  g.font=`600 17px ${FB}`;g.fillStyle=PR.muted;g.fillText('BLOCK',CX,y);g.textAlign='right';g.fillText('POA',CX+220,y);g.fillText('POD',CX+320,y);g.fillText('ACRES',CX+440,y);g.fillText('FLIGHTS',CX+CW,y);g.textAlign='left';y+=12;
+  dr.blocks.slice(0,5).forEach(b=>{g.fillStyle=PR.line;g.fillRect(CX,y+34,CW,1);const by=y+24;g.font=`700 21px ${FM}`;g.fillStyle='#00799F';g.fillText(b.name,CX+4,by);
+   g.font=`500 20px ${FM}`;g.fillStyle=PR.ink;g.textAlign='right';g.fillText((b.p*100).toFixed(1)+'%',CX+220,by);g.fillText(Math.round(b.pod*100)+'%',CX+320,by);g.fillText(String(Math.round(b.acres)),CX+440,by);g.fillText(String(b.flights),CX+CW-8,by);g.textAlign='left';y+=35});
+  y+=26}
+ sec('Behavior and search notes');
+ const notes=P.cat.notes.concat(P.meds.map(m=>m.note),droneNotes(P,dr));
+ if(P.hours<1)notes.push('Early in the incident: prioritize a hasty search of the LKP area and travel routes.');
+ g.font=`400 20px ${FB}`;let cut=false;
+ for(const nt of notes){const ls=wrapText(g,nt,CW-24);if(y+ls.length*27>BOT){cut=true;break}
+  g.fillStyle=PR.accent;g.fillRect(CX+2,y-12,8,8);g.fillStyle=PR.ink;ls.forEach((l,n)=>g.fillText(l,CX+24,y+n*27));y+=ls.length*27+10}
+ if(cut&&y+24<=BOT){g.fillStyle=PR.muted;g.fillText('More notes in the app.',CX+24,y)}
+ // footer
+ const warns=A.warn.slice();if(distMass<.9)warns.push('Part of the distance model falls outside the mapped area.');
+ if(mr.fail&&mr.fail<mr.total)warns.push('Some basemap tiles did not load.');
+ g.font=`400 18px ${FB}`;g.fillStyle=PR.muted;
+ g.fillText(clipText(g,fileStem(ver)+' · Planning aid for experienced search managers. Does not replace a full search plan, consensus weighting or local knowledge. Distances modeled on ISRID statistics; features from USGS and OpenStreetMap; elevation from USGS 3DEP terrain tiles.',W-100),50,1664);
+ if(warns.length){g.fillStyle=PR.warn;g.fillText(clipText(g,'Data notes: '+warns.join(' '),W-100),50,1690)}
+ return{c,mr};
+}
+
+function pdfFromJpeg(jpg,w,h){
+ const enc=new TextEncoder(),parts=[],offs=[];let len=0;
+ const push=x=>{const b=typeof x==='string'?enc.encode(x):x;parts.push(b);len+=b.length};
+ const obj=(n,fn)=>{offs[n]=len;push(n+' 0 obj\n');fn();push('\nendobj\n')};
+ push('%PDF-1.4\n%âãÏÓ\n');
+ obj(1,()=>push('<< /Type /Catalog /Pages 2 0 R >>'));
+ obj(2,()=>push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+ obj(3,()=>push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>'));
+ obj(4,()=>{push(`<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);push(jpg);push('\nendstream')});
+ const cs='q 792 0 0 612 0 0 cm /Im0 Do Q';
+ obj(5,()=>push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+ const xref=len;let x='xref\n0 6\n0000000000 65535 f \n';for(let i=1;i<=5;i++)x+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
+ push(x+`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+ return new Blob(parts,{type:'application/pdf'});
+}
+
+let SHEET=null;
+const sheetBtns=['sheetPrint','sheetJpg','sheetPdf','sheetShare'];
+function sheetReady(on){sheetBtns.forEach(id=>$(id).disabled=!on)}
+async function openSheet(){
+ if(!S.result){status('Run an analysis first','err');return}
+ $('sheetModal').hidden=false;$('sheetClose').focus();$('sheetImg').hidden=true;$('sheetMsg').textContent='Building the one-pager…';sheetReady(false);
+ try{const ver=exportVersion();const{c,mr}=await buildSheet(ver);const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));if(!blob)throw new Error('image encode failed');
+  if(SHEET)URL.revokeObjectURL(SHEET.url);SHEET={blob,url:URL.createObjectURL(blob),name:fileStem(ver)+'-briefing',ver};
+  $('sheetImg').src=SHEET.url;$('printImg').src=SHEET.url;$('sheetImg').hidden=false;
+  $('sheetMsg').textContent=verLabel(ver)+' · '+prettyTime(ver.at)+' · '+(mr.fail===mr.total?'Basemap tiles did not load, so the map shows overlays only. Pick another basemap in the layer menu and rebuild.':'Letter, landscape. Uses the basemap and layers currently on the map.');
+  const file=new File([blob],SHEET.name+'.jpg',{type:'image/jpeg'});SHEET.file=file;
+  $('sheetShare').hidden=!(navigator.canShare&&navigator.canShare({files:[file]}));sheetReady(true)}
+ catch(e){$('sheetMsg').textContent='Could not build the one-pager ('+e.message+'). Try another basemap and press Rebuild.'}
+}
+function closeSheet(){$('sheetModal').hidden=true}
+$('sheetBtn').onclick=openSheet;$('sheetHdr').onclick=openSheet;$('sheetRebuild').onclick=openSheet;$('sheetClose').onclick=closeSheet;
+$('sheetModal').addEventListener('click',e=>{if(e.target===$('sheetModal'))closeSheet()});
+$('sheetPrint').onclick=async()=>{try{await $('printImg').decode()}catch(e){}window.print()};
+$('sheetJpg').onclick=async()=>{if(SHEET&&await saveBlob(SHEET.name+'.jpg',SHEET.blob))$('sheetMsg').textContent='Saved '+SHEET.name+'.jpg'};
+$('sheetPdf').onclick=async()=>{if(!SHEET)return;const jpg=new Uint8Array(await SHEET.blob.arrayBuffer());if(await saveBlob(SHEET.name+'.pdf',pdfFromJpeg(jpg,2200,1700)))$('sheetMsg').textContent='Saved '+SHEET.name+'.pdf'};
+$('sheetShare').onclick=async()=>{if(!SHEET)return;try{await navigator.share({files:[SHEET.file],title:'SAR briefing '+verLabel(SHEET.ver),text:'SAR probability map and summary'})}catch(e){if(e.name!=='AbortError')$('sheetMsg').textContent='Sharing was blocked. Save the JPEG and send it instead.'}};
+
+// ================= wiring =================
+let deb=null;const sched=()=>{clearTimeout(deb);deb=setTimeout(()=>run(false),350)};
+document.querySelectorAll('#paneSetup input,#paneSetup select').forEach(el=>{if(!['addr','ll'].includes(el.id))el.addEventListener('input',sched)});
+catSel.addEventListener('change',()=>{setQ();sched()});
+$('age').addEventListener('change',()=>{const a=+$('age').value;const c=CATS.find(c=>c.ages&&a>=c.ages[0]&&a<=c.ages[1]);if(c&&catSel.value!==c.id){catSel.value=c.id;setQ();sched()}});
+$('resetQ').onclick=()=>{setQ();sched()};
+function gridUI(){const sq=$('gridType').value==='squares';$('sectorOpts').hidden=sq;$('ringsCustomWrap').hidden=$('ringSrc').value!=='custom'}
+$('gridType').addEventListener('change',gridUI);$('ringSrc').addEventListener('change',gridUI);gridUI();
+$('runBtn').onclick=()=>{run(true);tab('results')};
+updateCoord();run(true);
 })();
 </script>
-
-</body></html>
+</body>
+</html>
